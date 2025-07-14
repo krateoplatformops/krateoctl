@@ -1,0 +1,365 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "description": "widget version",
+      "type": "string",
+      "default": "v1beta1"
+    },
+    "kind": {
+      "default": "Button",
+      "description": "Button represents an interactive component which, when clicked, triggers a specific business logic defined by its `clickActionId`",
+      "type": "string"
+    },
+    "spec": {
+      "type": "object",
+      "properties": {
+        "widgetData": {
+          "type": "object",
+          "properties": {
+            "actions": {
+              "description": "the actions of the widget",
+              "type": "object",
+              "properties": {
+                "rest": {
+                  "type": "array",
+                  "description": "rest api call actions triggered by the widget",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "payloadKey": {
+                        "type": "string",
+                        "description": "key used to nest the payload in the request body"
+                      },
+                      "id": {
+                        "type": "string",
+                        "description": "unique identifier for the action"
+                      },
+                      "resourceRefId": {
+                        "type": "string",
+                        "description": "the identifier of the k8s custom resource that should be represented"
+                      },
+                      "requireConfirmation": {
+                        "type": "boolean",
+                        "description": "whether user confirmation is required before triggering the action"
+                      },
+                      "errorMessage": {
+                        "type": "string",
+                        "description": "a message that will be displayed inside a toast in case of error"
+                      },
+                      "successMessage": {
+                        "type": "string",
+                        "description": "a message that will be displayed inside a toast in case of success"
+                      },
+                      "onSuccessNavigateTo": {
+                        "type": "string",
+                        "description": "url to navigate to after successful execution"
+                      },
+                      "onEventNavigateTo": {
+                        "type": "object",
+                        "required": ["eventReason", "url"],
+                        "additionalProperties": false,
+                        "description": "conditional navigation triggered by a specific event",
+                        "properties": {
+                          "eventReason": {
+                            "type": "string",
+                            "description": "identifier of the awaited event reason"
+                          },
+                          "url": {
+                            "type": "string",
+                            "description": "url to navigate to when the event is received"
+                          },
+                          "timeout": {
+                            "type": "integer",
+                            "description": "the timeout in seconds to wait for the event",
+                            "default": 50
+                          }
+                        }
+                      },
+                      "loading": {
+                        "type": "string",
+                        "enum": ["global", "inline", "none"],
+                        "description": "defines the loading indicator behavior for the action"
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": ["rest"],
+                        "description": "type of action to execute"
+                      },
+                      "headers": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "description": "key and value as a single, example: 'x-custom-header: value'"
+                        }
+                      },
+                      "payload": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "description": "static payload sent with the request"
+                      },
+                      "payloadToOverride": {
+                        "type": "array",
+                        "description": "list of payload fields to override dynamically",
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": ["name", "value"],
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "description": "name of the field to override"
+                            },
+                            "value": {
+                              "type": "string",
+                              "description": "value to use for overriding the field"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "required": ["id", "resourceRefId"]
+                  }
+                },
+                "navigate": {
+                  "type": "array",
+                  "description": "client-side navigation actions",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "description": "unique identifier for the action"
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": ["navigate"],
+                        "description": "type of navigation action"
+                      },
+                      "name": {
+                        "type": "string",
+                        "description": "name of the navigation action"
+                      },
+                      "resourceRefId": {
+                        "type": "string",
+                        "description": "the identifier of the k8s custom resource that should be represented"
+                      },
+                      "requireConfirmation": {
+                        "type": "boolean",
+                        "description": "whether user confirmation is required before navigating"
+                      },
+                      "loading": {
+                        "type": "string",
+                        "enum": ["global", "inline", "none"],
+                        "description": "defines the loading indicator behavior during navigation"
+                      }
+                    },
+                    "required": ["id", "type", "name", "resourceRefId"]
+                  }
+                },
+                "openDrawer": {
+                  "type": "array",
+                  "description": "actions to open side drawer components",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "description": "unique identifier for the drawer action"
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": ["openDrawer"],
+                        "description": "type of drawer action"
+                      },
+                      "resourceRefId": {
+                        "type": "string",
+                        "description": "the identifier of the k8s custom resource that should be represented"
+                      },
+                      "requireConfirmation": {
+                        "type": "boolean",
+                        "description": "whether user confirmation is required before opening"
+                      },
+                      "loading": {
+                        "type": "string",
+                        "enum": ["global", "inline", "none"],
+                        "description": "defines the loading indicator behavior for the drawer"
+                      },
+                      "size": {
+                        "type": "string",
+                        "enum": ["default", "large"],
+                        "description": "drawer size to be displayed"
+                      },
+                      "title": {
+                        "type": "string",
+                        "description": "title shown in the drawer header"
+                      }
+                    },
+                    "required": ["id", "type", "resourceRefId"]
+                  }
+                },
+                "openModal": {
+                  "type": "array",
+                  "description": "actions to open modal dialog components",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "description": "unique identifier for the modal action"
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": ["openModal"],
+                        "description": "type of modal action"
+                      },
+                      "name": {
+                        "type": "string",
+                        "description": "name of the modal action"
+                      },
+                      "resourceRefId": {
+                        "type": "string",
+                        "description": "the identifier of the k8s custom resource that should be represented"
+                      },
+                      "requireConfirmation": {
+                        "type": "boolean",
+                        "description": "whether user confirmation is required before opening"
+                      },
+                      "loading": {
+                        "type": "string",
+                        "enum": ["global", "inline", "none"],
+                        "description": "defines the loading indicator behavior for the modal"
+                      },
+                      "title": {
+                        "type": "string",
+                        "description": "title shown in the modal header"
+                      }
+                    },
+                    "required": ["id", "type", "name", "resourceRefId"]
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            "color": {
+              "description": "the color of the button",
+              "type": "string",
+              "enum": [
+                "default",
+                "primary",
+                "danger",
+                "blue",
+                "purple",
+                "cyan",
+                "green",
+                "magenta",
+                "pink",
+                "red",
+                "orange",
+                "yellow",
+                "volcano",
+                "geekblue",
+                "lime",
+                "gold"
+              ]
+            },
+            "label": {
+              "description": "the label of the button",
+              "type": "string"
+            },
+            "icon": {
+              "description": "the icon of the button (font awesome icon name eg: `fa-inbox`)",
+              "type": "string"
+            },
+            "shape": {
+              "description": "the shape of the button",
+              "type": "string",
+              "enum": ["default", "circle", "round"]
+            },
+            "size": {
+              "description": "the size of the button",
+              "type": "string",
+              "enum": ["small", "middle", "large"]
+            },
+            "type": {
+              "description": "the visual style of the button",
+              "type": "string",
+              "enum": ["default", "text", "link", "primary", "dashed"]
+            },
+            "clickActionId": {
+              "description": "the id of the action to be executed when the button is clicked",
+              "type": "string"
+            }
+          },
+          "required": ["actions", "clickActionId"],
+          "additionalProperties": false
+        },
+        "resourcesRefs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "apiVersion", "name", "namespace", "resource", "verb"],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "apiVersion": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "namespace": {
+                "type": "string"
+              },
+              "resource": {
+                "type": "string"
+              },
+              "verb": {
+                "type": "string",
+                "enum": ["GET", "POST", "DELETE"]
+              }
+            }
+          }
+        },
+        "apiRef": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "namespace": {
+              "type": "string"
+            }
+          },
+          "required": ["name", "namespace"],
+          "additionalProperties": false
+        },
+        "widgetDataTemplate": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "forPath": {
+                "type": "string"
+              },
+              "expression": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["widgetData"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["kind", "spec", "version"]
+}

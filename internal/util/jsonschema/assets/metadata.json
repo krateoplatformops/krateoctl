@@ -1,0 +1,16 @@
+{
+    "type": "object",
+    "description": "kubernetes metadata",
+    "properties": {
+        "namespace": {
+            "type": "string"
+        },
+        "name": {
+            "type": "string"
+        }
+    },
+    "required": [
+        "namespace",
+        "name"
+    ]
+}

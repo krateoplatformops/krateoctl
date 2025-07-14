@@ -1,0 +1,14 @@
+{
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "forPath": {
+                "type": "string"
+            },
+            "expression": {
+                "type": "string"
+            }
+        }
+    }
+}

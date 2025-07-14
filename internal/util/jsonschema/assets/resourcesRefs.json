@@ -1,0 +1,40 @@
+{
+    "type": "array",
+    "items": {
+        "type": "object",
+        "required": [
+            "id"
+        ],
+        "properties": {
+            "id": {
+                "type": "string"
+            },
+            "name": {
+                "type": "string"
+            },
+            "namespace": {
+                "type": "string"
+            },
+            "resource": {
+                "type": "string"
+            },
+            "apiVersion": {
+                "type": "string"
+            },
+            "verb": {
+                "type": "string",
+                "enum": [
+                    "POST",
+                    "PUT",
+                    "PATCH",
+                    "DELETE",
+                    "GET"
+                ]
+            },
+            "payload": {
+                "type": "object",
+                "additionalProperties": true
+            }
+        }
+    }
+}

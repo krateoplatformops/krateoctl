@@ -1,0 +1,272 @@
+# @schema
+# description: ArgoCD parameters section
+# type: object
+# @schema
+argocd:
+  # @schema
+  # description: Namespace where ArgoCD has been installed
+  # type: string
+  # default: krateo-system
+  # @schema
+  namespace: krateo-system
+  # @schema
+  # description: ArgoCD application configuration section
+  # type: object
+  # @schema
+  application:
+    # @schema
+    # description: ArgoCD Application project
+    # type: string
+    # default: krateo-system
+    # @schema
+    project: default
+    # @schema
+    # description: ArgoCD Application source parameters section
+    # type: object
+    # @schema
+    source:
+      # @schema
+      # type: string
+      # description: ArgoCD Application source path inside the repository created by the template
+      # @schema
+      path: chart/
+    # @schema
+    # description: ArgoCD Application destination parameters section
+    # type: object
+    # @schema
+    destination:
+      # @schema
+      # description: ArgoCD Application target cluster
+      # type: string
+      # format: idn-hostname
+      # @schema
+      server: https://kubernetes.default.svc
+      # @schema
+      # description: ArgoCD Application target namespace
+      # type: string
+      # default: fireworks-app
+      # @schema
+      namespace: fireworks-app
+    # @schema
+    # description: ArgoCD Application synchronization policies section
+    # type: object
+    # @schema
+    syncPolicy:
+      # @schema
+      # description: ArgoCD Application automated synchronization policies section
+      # type: object
+      # @schema
+      automated:
+        # @schema
+        # type: boolean
+        # default: true
+        # @schema
+        prune: true
+        # @schema
+        # type: boolean
+        # default: true
+        # @schema
+        selfHeal: true
+
+
+# @schema
+# description: Helm Chart parameters section
+# type: object
+# @schema
+app:
+  # @schema
+  # description:  Helm Chart service parameters section
+  # type: object
+  # @schema
+  service:
+    # @schema
+    # description: Helm Chart service type
+    # enum:
+    # - NodePort
+    # - LoadBalancer
+    # @schema
+    type: NodePort
+    # @schema
+    # description: Helm Chart service port
+    # type: integer
+    # minimum: 30000
+    # maximum: 32767
+    # @schema
+    port: 31180
+
+
+# @schema
+# description: Git Repository parameters section
+# type: object
+# @schema
+git:
+  # Type will be parsed as boolean
+  unsupportedCapabilities: true
+  # @schema
+  # description: DeletionPolicy specifies what will happen to the underlying external when this managed resource is deleted.
+  # enum:
+  # - Delete
+  # - Orphan
+  # @schema
+  deletionPolicy: Orphan
+  # Type will be parsed as boolean
+  insecure: true
+  # @schema
+  # description: Parameters section for Git repository used as template for the application skeleton
+  # type: object
+  # @schema
+  fromRepo:
+    # @schema
+    # description: for the target Git repository
+    # type: string
+    # format: idn-hostname
+    # examples: [https://api.example.org]
+    # @schema
+    scmUrl: https://github.com
+    # @schema
+    # description: Organization/group/subgroup for the target Git repository
+    # type: string
+    # @schema
+    org: krateoplatformops
+    # @schema
+    # description: Name for the target Git repository
+    # type: string
+    # @schema
+    name: krateo-v2-template-fireworksapp
+    # @schema
+    # description: Branch of Git repository used as template for the application skeleton
+    # type: string
+    # @schema
+    branch: main
+    # @schema
+    # description: Path of Git repository used as template for the application skeleton
+    # type: string
+    # @schema
+    path: skeleton/
+    # @schema
+    # description: References to the secrets that contain the credentials required to clone the repository (in case of private ones)
+    # type: object
+    # @schema
+    credentials:
+      # @schema
+      # description: AuthMethod defines the authentication mode.
+      # enum:
+      # - generic
+      # - bearer
+      # @schema
+      authMethod: generic
+      # @schema
+      # description: Reference details about the secret where the credentials are stored
+      # type: object
+      # @schema
+      secretRef:
+        # @schema
+        # description: Namespace of the secret where the credentials are stored
+        # type: string
+        # @schema
+        namespace: krateo-system
+        # @schema
+        # description: Name of the secret where the credentials are stored
+        # type: string
+        # @schema
+        name: github-repo-creds
+        # @schema
+        # description: Key of the secret to use
+        # type: string
+        # @schema
+        key: token
+  
+  # @schema
+  # description: Parameters section for Git repository that will be created by Krateo
+  # type: object
+  # @schema
+  toRepo:
+    # @schema
+    # description: for the target Git repository
+    # type: string
+    # format: idn-hostname
+    # examples: [https://api.example.org]
+    # @schema
+    scmUrl: https://github.com
+    # @schema
+    # description: Organization/group/subgroup for the target Git repository
+    # type: string
+    # @schema
+    org: krateoplatformops-archive
+    # @schema
+    # description: Name for the target Git repository
+    # type: string
+    # @schema
+    name: fireworksapp-test-v2
+    # @schema
+    # description: Branch for the target Git repository
+    # type: string
+    # @schema
+    branch: main
+    # @schema
+    # description: Path of Git repository 
+    # type: string
+    # @schema
+    path: /
+    # @schema
+    # description: References to the secrets that contain the credentials required to clone the repository (in case of private ones)
+    # type: object
+    # @schema
+    credentials:
+      # @schema
+      # description: AuthMethod defines the authentication mode.
+      # enum:
+      # - generic
+      # - bearer
+      # @schema
+      authMethod: generic
+      # @schema
+      # description: Reference details about the secret where the credentials are stored
+      # type: object
+      # @schema
+      secretRef:
+        # @schema
+        # description: Namespace of the secret where the credentials are stored
+        # type: string
+        # @schema
+        namespace: krateo-system
+        # @schema
+        # description: Name of the secret where the credentials are stored
+        # type: string
+        # @schema
+        name: github-repo-creds
+        # @schema
+        # description: Key of the secret to use
+        # type: string
+        # @schema
+        key: token
+    
+    # @schema
+    # description: URL to use for API
+    # type: string
+    # format: idn-hostname
+    # examples: [https://api.example.org]
+    # @schema
+    apiUrl: https://api.github.com
+    # @schema
+    # description: Whether the repository is private
+    # type: boolean
+    # @schema
+    private: false
+    # @schema
+    # description: Whether the repository must be initialized
+    # type: boolean
+    # @schema
+    initialize: true
+    # @schema
+    # description: DeletionPolicy specifies what will happen to the underlying external when this managed resource is deleted.
+    # enum:
+    # - Delete
+    # - Orphan
+    # @schema
+    deletionPolicy: Delete
+    # @schema
+    # description: Whether to enable verbose logging for Repo controller 
+    # type: boolean
+    # @schema
+    verbose: false

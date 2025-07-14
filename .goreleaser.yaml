@@ -1,0 +1,55 @@
+# goreleaser release --snapshot --clean
+version: 2
+
+project_name: krateoctl
+
+builds:
+  - id: krateoctl
+    binary: krateoctl
+    main: ./main.go
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: linux
+        goarch: arm64
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+
+upx:
+  - # Whether to enable it or not.
+    #
+    # Templates: allowed.
+    enabled: true
+    # Filter by build ID.
+    ids: [krateoctl]
+    # Filter by GOOS.
+    goos: [linux, windows]
+    # Filter by GOARCH.
+    goarch: [amd64]
+    # Compress argument.
+    # Valid options are from '1' (faster) to '9' (better), and 'best'.
+    compress: best
+    # Whether to try LZMA (slower).
+    lzma: true
+    # Whether to try all methods and filters (slow).
+    brute: true
+
+archives:
+  - id: archive
+    formats: ["zip", "tar.gz"]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    wrap_in_directory: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: ["zip"]
+    files:
+      - LICENSE
+      - README.md
+
+
+release:
+  github:
+    owner: krateoplatformops
+    name: krateoctl
