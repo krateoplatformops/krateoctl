@@ -38,7 +38,7 @@ upx:
 
 archives:
   - id: archive
-    formats: ["zip", "tar.gz"]
+    formats: ["tar.gz"]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     wrap_in_directory: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
     format_overrides:
