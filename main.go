@@ -24,9 +24,10 @@ var (
 func main() {
 	tool := subcommands.NewCommander(flag.CommandLine, appName)
 	tool.Banner = func(w io.Writer) {
-		fmt.Fprintf(w, "┬┌─┬─┐┌─┐┌┬┐┌─┐┌─┐\n")
-		fmt.Fprintf(w, "├┴┐├┬┘├─┤ │ ├┤ │ │Platform\n")
-		fmt.Fprintf(w, "┴ ┴┴└─┴ ┴ ┴ └─┘└─┘ Ops (ver: %s, bld: %s)\n\n", version, commit)
+		fmt.Fprintf(w, "┬┌─┬─┐┌─┐┌┬┐┌─┐┌─┐Platform\n")
+		fmt.Fprintf(w, "├┴┐├┬┘├─┤ │ ├┤ │ │     Ops\n")
+		fmt.Fprintf(w, "┴ ┴┴└─┴ ┴ ┴ └─┘└─┘\n")
+		fmt.Fprintf(w, "               CTL (ver: %s, bld: %s)\n\n", version, commit)
 	}
 	tool.Register(genschema.Command(), "")
 	tool.Register(gencrd.Command(), "")
