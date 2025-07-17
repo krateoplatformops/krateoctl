@@ -473,10 +473,6 @@ func (s Schema) validateTypeConstraints() error {
 		return errors.New("cannot use both 'const' and 'type' in the same schema")
 	}
 
-	if s.Enum != nil && !s.Type.IsEmpty() {
-		return errors.New("cannot use both 'enum' and 'type' in the same schema")
-	}
-
 	return nil
 }
 

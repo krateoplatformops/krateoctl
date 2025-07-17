@@ -150,6 +150,7 @@ git:
     credentials:
       # @schema
       # description: AuthMethod defines the authentication mode.
+      # type: string
       # enum:
       # - generic
       # - bearer
