@@ -1,40 +1,68 @@
 {
-    "type": "array",
-    "items": {
-        "type": "object",
-        "required": [
-            "id"
-        ],
-        "properties": {
-            "id": {
-                "type": "string"
+    "type": "object",
+    "properties": {
+        "_slice_": {
+            "type": "object",
+            "properties": {
+                "offset": {
+                    "type": "integer"
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "perPage": {
+                    "type": "integer"
+                },
+                "continue": {
+                    "type": "boolean"
+                }
             },
-            "name": {
-                "type": "string"
-            },
-            "namespace": {
-                "type": "string"
-            },
-            "resource": {
-                "type": "string"
-            },
-            "apiVersion": {
-                "type": "string"
-            },
-            "verb": {
-                "type": "string",
-                "enum": [
-                    "POST",
-                    "PUT",
-                    "PATCH",
-                    "DELETE",
-                    "GET"
-                ]
-            },
-            "payload": {
+            "required": [
+                "page",
+                "perPage"
+            ]
+        },
+        "items": {
+            "type": "array",
+            "items": {
                 "type": "object",
-                "additionalProperties": true
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "namespace": {
+                        "type": "string"
+                    },
+                    "resource": {
+                        "type": "string"
+                    },
+                    "apiVersion": {
+                        "type": "string"
+                    },
+                    "verb": {
+                        "type": "string",
+                        "enum": [
+                            "POST",
+                            "PUT",
+                            "PATCH",
+                            "DELETE",
+                            "GET"
+                        ]
+                    },
+                    "payload": {
+                        "type": "object"
+                    }
+                },
+                "required": [
+                    "id"
+                ]
             }
         }
-    }
+    },
+    "required": [
+        "items"
+    ]
 }
