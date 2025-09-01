@@ -22,13 +22,15 @@ func Command() subcommands.Command {
 }
 
 const (
-	envJSONSchema = "JSONSCHEMA"
-	envOutputDir  = "OUTPUTDIR"
+	envJSONSchema       = "JSONSCHEMA"
+	envOutputDir        = "OUTPUTDIR"
+	envAllowedResources = "ALLOWED_RESOURCES"
 )
 
 type genCRDCmd struct {
-	jsonSchemaFile string
-	crdFile        string
+	jsonSchemaFile   string
+	crdFile          string
+	allowedResources string
 }
 
 func (c *genCRDCmd) Name() string { return "gen-widget" }
@@ -55,6 +57,8 @@ func (c *genCRDCmd) Usage() string {
 
 func (c *genCRDCmd) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.crdFile, "output", os.Getenv(envOutputDir), "generated Widget CRD output dir (optional)")
+	f.StringVar(&c.allowedResources, "allowed-resources", os.Getenv(envAllowedResources),
+		"comma separated list of allowed resources under 'resourceRefs' items (optional)")
 }
 
 func (c *genCRDCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...any) subcommands.ExitStatus {
@@ -104,10 +108,31 @@ func (c *genCRDCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...any) sub
 		return subcommands.ExitFailure
 	}
 
+	allowedResources, err := jsonschema.ExtractAllowedResources(src)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: unable to extract allowedResources from JSON Schema: %v\n", err)
+		return subcommands.ExitFailure
+	}
+
 	spec, err := jsonschema.ExtractSpec(src)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: unable to extract spec from JSON Schema: %v\n", err)
 		return subcommands.ExitFailure
+	}
+
+	if c.allowedResources != "" {
+		allowedResources := strings.Split(c.allowedResources, ",")
+		for i, el := range allowedResources {
+			allowedResources[i] = strings.TrimSpace(el)
+		}
+	}
+
+	if len(allowedResources) > 0 {
+		err = jsonschema.SetAllowedResources(spec, allowedResources)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: unable to inject allowed resources into JSON Schema: %v\n", err)
+			return subcommands.ExitFailure
+		}
 	}
 
 	dat, err := json.Marshal(spec)
