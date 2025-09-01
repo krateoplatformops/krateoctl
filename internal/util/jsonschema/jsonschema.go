@@ -14,6 +14,7 @@ var extras embed.FS
 
 const (
 	apiRefKey                = "apiRef"
+	widgetDataKey            = "widgetData"
 	widgetDataTemplateKey    = "widgetDataTemplate"
 	resourcesRefsKey         = "resourcesRefs"
 	resourcesRefsTemplateKey = "resourcesRefsTemplate"
@@ -62,6 +63,37 @@ func ExtractKindAndVersion(schema map[string]any) (kind, version string, err err
 	return
 }
 
+func ExtractAllowedResources(schema map[string]any) (allowedResources []string, err error) {
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		err = fmt.Errorf("missing 'properties' field")
+		return
+	}
+
+	allowed, ok := properties["allowedResources"].(map[string]any)
+	if !ok {
+		// se non c'è la property "allowedResources", ritorno []string{}
+		return []string{}, nil
+	}
+
+	enumVals, ok := allowed["enum"].([]any)
+	if !ok {
+		// se non c'è enum, ritorno []string{}
+		return []string{}, nil
+	}
+
+	// converto in []string
+	for _, v := range enumVals {
+		if s, ok := v.(string); ok {
+			allowedResources = append(allowedResources, s)
+		} else {
+			return nil, fmt.Errorf("enum value is not a string: %v", v)
+		}
+	}
+
+	return
+}
+
 func ExtractSpec(in map[string]any) (out map[string]any, err error) {
 	res, ok, err := maps.NestedMap(in, "properties", "spec")
 	if err != nil {
@@ -102,6 +134,26 @@ func ExtractSpec(in map[string]any) (out map[string]any, err error) {
 	}
 
 	return res, nil
+}
+
+func SetAllowedResources(schema map[string]any, allowedResources []string) error {
+	if len(allowedResources) == 0 {
+		return nil
+	}
+
+	path := []string{"properties", resourcesRefsKey, "properties", "items", "items", "properties", "resource"}
+
+	res, ok, err := maps.NestedMap(schema, path...)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("'%s' field not found", strings.Join(path, "."))
+	}
+
+	res["enum"] = allowedResources
+
+	return maps.SetNestedValue(schema, path, res)
 }
 
 func insertExtras(filename string, into map[string]any, fields ...string) error {

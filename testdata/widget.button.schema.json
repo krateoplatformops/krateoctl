@@ -12,6 +12,10 @@
       "description": "Button represents an interactive component which, when clicked, triggers a specific business logic defined by its `clickActionId`",
       "type": "string"
     },
+    "allowedResources": {
+      "type": "string",
+      "enum": ["AAA", "BBB", "CCC"]
+    },
     "spec": {
       "type": "object",
       "properties": {
