@@ -355,6 +355,12 @@ spec:
                           type: object
                         type: array
                     type: object
+                  allowedResources:
+                    enum:
+                    - AAA
+                    - BBB
+                    - CCC
+                    type: string
                   clickActionId:
                     description: the id of the action to be executed when the button
                       is clicked

@@ -18,6 +18,7 @@ const (
 	widgetDataTemplateKey    = "widgetDataTemplate"
 	resourcesRefsKey         = "resourcesRefs"
 	resourcesRefsTemplateKey = "resourcesRefsTemplate"
+	allowedResourcesKey      = "allowedResources"
 )
 
 func ExtractKindAndVersion(schema map[string]any) (kind, version string, err error) {
@@ -63,35 +64,29 @@ func ExtractKindAndVersion(schema map[string]any) (kind, version string, err err
 	return
 }
 
-func ExtractAllowedResources(schema map[string]any) (allowedResources []string, err error) {
-	properties, ok := schema["properties"].(map[string]any)
-	if !ok {
-		err = fmt.Errorf("missing 'properties' field")
-		return
-	}
-
-	allowed, ok := properties["allowedResources"].(map[string]any)
-	if !ok {
-		// se non c'è la property "allowedResources", ritorno []string{}
-		return []string{}, nil
-	}
-
-	enumVals, ok := allowed["enum"].([]any)
-	if !ok {
-		// se non c'è enum, ritorno []string{}
-		return []string{}, nil
-	}
-
-	// converto in []string
-	for _, v := range enumVals {
-		if s, ok := v.(string); ok {
-			allowedResources = append(allowedResources, s)
-		} else {
-			return nil, fmt.Errorf("enum value is not a string: %v", v)
+func ExtractAllowedResources(schema map[string]any) ([]string, error) {
+	extract := func(node map[string]any) []string {
+		var out []string
+		if enumVals, ok := node["enum"].([]any); ok {
+			if t, ok := node["type"].(string); ok && t == "string" {
+				for _, v := range enumVals {
+					if s, ok := v.(string); ok {
+						out = append(out, s)
+					}
+				}
+			}
 		}
+		return out
 	}
 
-	return
+	path := []string{"properties", "spec", "properties", widgetDataKey, "properties", allowedResourcesKey}
+
+	allowed, ok, _ := maps.NestedMap(schema, path...)
+	if !ok {
+		return []string{}, nil
+	}
+
+	return extract(allowed), nil
 }
 
 func ExtractSpec(in map[string]any) (out map[string]any, err error) {
@@ -152,7 +147,6 @@ func SetAllowedResources(schema map[string]any, allowedResources []string) error
 	}
 
 	res["enum"] = allowedResources
-
 	return maps.SetNestedValue(schema, path, res)
 }
 
