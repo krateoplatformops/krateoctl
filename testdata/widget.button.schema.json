@@ -12,16 +12,20 @@
       "description": "Button represents an interactive component which, when clicked, triggers a specific business logic defined by its `clickActionId`",
       "type": "string"
     },
-    "allowedResources": {
-      "type": "string",
-      "enum": ["AAA", "BBB", "CCC"]
-    },
     "spec": {
       "type": "object",
       "properties": {
         "widgetData": {
           "type": "object",
           "properties": {
+            "allowedResources": {
+              "type": "string",
+              "enum": [
+                "AAA",
+                "BBB",
+                "CCC"
+              ]
+            },
             "actions": {
               "description": "the actions of the widget",
               "type": "object",
@@ -63,7 +67,10 @@
                       },
                       "onEventNavigateTo": {
                         "type": "object",
-                        "required": ["eventReason", "url"],
+                        "required": [
+                          "eventReason",
+                          "url"
+                        ],
                         "additionalProperties": false,
                         "description": "conditional navigation triggered by a specific event",
                         "properties": {
@@ -84,12 +91,18 @@
                       },
                       "loading": {
                         "type": "string",
-                        "enum": ["global", "inline", "none"],
+                        "enum": [
+                          "global",
+                          "inline",
+                          "none"
+                        ],
                         "description": "defines the loading indicator behavior for the action"
                       },
                       "type": {
                         "type": "string",
-                        "enum": ["rest"],
+                        "enum": [
+                          "rest"
+                        ],
                         "description": "type of action to execute"
                       },
                       "headers": {
@@ -110,7 +123,10 @@
                         "items": {
                           "type": "object",
                           "additionalProperties": false,
-                          "required": ["name", "value"],
+                          "required": [
+                            "name",
+                            "value"
+                          ],
                           "properties": {
                             "name": {
                               "type": "string",
@@ -124,7 +140,10 @@
                         }
                       }
                     },
-                    "required": ["id", "resourceRefId"]
+                    "required": [
+                      "id",
+                      "resourceRefId"
+                    ]
                   }
                 },
                 "navigate": {
@@ -140,7 +159,9 @@
                       },
                       "type": {
                         "type": "string",
-                        "enum": ["navigate"],
+                        "enum": [
+                          "navigate"
+                        ],
                         "description": "type of navigation action"
                       },
                       "name": {
@@ -157,11 +178,20 @@
                       },
                       "loading": {
                         "type": "string",
-                        "enum": ["global", "inline", "none"],
+                        "enum": [
+                          "global",
+                          "inline",
+                          "none"
+                        ],
                         "description": "defines the loading indicator behavior during navigation"
                       }
                     },
-                    "required": ["id", "type", "name", "resourceRefId"]
+                    "required": [
+                      "id",
+                      "type",
+                      "name",
+                      "resourceRefId"
+                    ]
                   }
                 },
                 "openDrawer": {
@@ -177,7 +207,9 @@
                       },
                       "type": {
                         "type": "string",
-                        "enum": ["openDrawer"],
+                        "enum": [
+                          "openDrawer"
+                        ],
                         "description": "type of drawer action"
                       },
                       "resourceRefId": {
@@ -190,12 +222,19 @@
                       },
                       "loading": {
                         "type": "string",
-                        "enum": ["global", "inline", "none"],
+                        "enum": [
+                          "global",
+                          "inline",
+                          "none"
+                        ],
                         "description": "defines the loading indicator behavior for the drawer"
                       },
                       "size": {
                         "type": "string",
-                        "enum": ["default", "large"],
+                        "enum": [
+                          "default",
+                          "large"
+                        ],
                         "description": "drawer size to be displayed"
                       },
                       "title": {
@@ -203,7 +242,11 @@
                         "description": "title shown in the drawer header"
                       }
                     },
-                    "required": ["id", "type", "resourceRefId"]
+                    "required": [
+                      "id",
+                      "type",
+                      "resourceRefId"
+                    ]
                   }
                 },
                 "openModal": {
@@ -219,7 +262,9 @@
                       },
                       "type": {
                         "type": "string",
-                        "enum": ["openModal"],
+                        "enum": [
+                          "openModal"
+                        ],
                         "description": "type of modal action"
                       },
                       "name": {
@@ -236,7 +281,11 @@
                       },
                       "loading": {
                         "type": "string",
-                        "enum": ["global", "inline", "none"],
+                        "enum": [
+                          "global",
+                          "inline",
+                          "none"
+                        ],
                         "description": "defines the loading indicator behavior for the modal"
                       },
                       "title": {
@@ -244,7 +293,12 @@
                         "description": "title shown in the modal header"
                       }
                     },
-                    "required": ["id", "type", "name", "resourceRefId"]
+                    "required": [
+                      "id",
+                      "type",
+                      "name",
+                      "resourceRefId"
+                    ]
                   }
                 }
               },
@@ -283,31 +337,55 @@
             "shape": {
               "description": "the shape of the button",
               "type": "string",
-              "enum": ["default", "circle", "round"]
+              "enum": [
+                "default",
+                "circle",
+                "round"
+              ]
             },
             "size": {
               "description": "the size of the button",
               "type": "string",
-              "enum": ["small", "middle", "large"]
+              "enum": [
+                "small",
+                "middle",
+                "large"
+              ]
             },
             "type": {
               "description": "the visual style of the button",
               "type": "string",
-              "enum": ["default", "text", "link", "primary", "dashed"]
+              "enum": [
+                "default",
+                "text",
+                "link",
+                "primary",
+                "dashed"
+              ]
             },
             "clickActionId": {
               "description": "the id of the action to be executed when the button is clicked",
               "type": "string"
             }
           },
-          "required": ["actions", "clickActionId"],
+          "required": [
+            "actions",
+            "clickActionId"
+          ],
           "additionalProperties": false
         },
         "resourcesRefs": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["id", "apiVersion", "name", "namespace", "resource", "verb"],
+            "required": [
+              "id",
+              "apiVersion",
+              "name",
+              "namespace",
+              "resource",
+              "verb"
+            ],
             "additionalProperties": false,
             "properties": {
               "id": {
@@ -327,7 +405,11 @@
               },
               "verb": {
                 "type": "string",
-                "enum": ["GET", "POST", "DELETE"]
+                "enum": [
+                  "GET",
+                  "POST",
+                  "DELETE"
+                ]
               }
             }
           }
@@ -342,7 +424,10 @@
               "type": "string"
             }
           },
-          "required": ["name", "namespace"],
+          "required": [
+            "name",
+            "namespace"
+          ],
           "additionalProperties": false
         },
         "widgetDataTemplate": {
@@ -361,9 +446,15 @@
           }
         }
       },
-      "required": ["widgetData"],
+      "required": [
+        "widgetData"
+      ],
       "additionalProperties": false
     }
   },
-  "required": ["kind", "spec", "version"]
+  "required": [
+    "kind",
+    "spec",
+    "version"
+  ]
 }
