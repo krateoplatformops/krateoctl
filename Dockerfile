@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.24.4-alpine3.21 AS builder
+FROM golang:1.25.0-alpine3.21 AS builder
 
 WORKDIR /app
 
@@ -19,7 +19,7 @@ COPY --from=builder /app/krateoctl /app/krateoctl
 RUN upx --best --lzma /app/krateoctl
 
 # Final Image
-FROM golang:1.24.4-alpine3.21
+FROM golang:1.25.0-alpine3.21
 
 LABEL org.opencontainers.image.source="https://github.com/krateoplatformops/krateoctl"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
