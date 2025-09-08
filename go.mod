@@ -1,15 +1,15 @@
 module github.com/krateoplatformops/krateoctl
 
-go 1.24.4
+go 1.25.0
 
 require (
 	github.com/aquasecurity/table v1.10.0
-	github.com/krateoplatformops/crdgen v0.4.3
+	github.com/krateoplatformops/crdgen v0.5.0
 	github.com/krateoplatformops/plumbing v0.6.0
 	github.com/magiconair/properties v1.8.10
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	gopkg.in/yaml.v3 v3.0.1
-	k8s.io/apimachinery v0.33.0
+	k8s.io/apimachinery v0.33.1
 )
 
 require (
