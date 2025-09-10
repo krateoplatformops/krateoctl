@@ -87,6 +87,20 @@ spec:
                           - BBB
                           - CCC
                           type: string
+                        slice:
+                          properties:
+                            continue:
+                              type: boolean
+                            offset:
+                              type: integer
+                            page:
+                              type: integer
+                            perPage:
+                              type: integer
+                          required:
+                          - page
+                          - perPage
+                          type: object
                         verb:
                           enum:
                           - POST

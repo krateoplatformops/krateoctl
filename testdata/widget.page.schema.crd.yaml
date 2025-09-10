@@ -1,0 +1,175 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.18.0
+  name: pages.widgets.templates.krateo.io
+spec:
+  group: widgets.templates.krateo.io
+  names:
+    categories:
+    - widgets
+    - krateo
+    kind: Page
+    listKind: PageList
+    plural: pages
+    singular: page
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .metadata.creationTimestamp
+      name: AGE
+      type: date
+    name: v1beta1
+    schema:
+      openAPIV3Schema:
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          spec:
+            properties:
+              apiRef:
+                properties:
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                required:
+                - name
+                - namespace
+                type: object
+              resourcesRefs:
+                properties:
+                  _slice_:
+                    properties:
+                      continue:
+                        type: boolean
+                      offset:
+                        type: integer
+                      page:
+                        type: integer
+                      perPage:
+                        type: integer
+                    required:
+                    - page
+                    - perPage
+                    type: object
+                  items:
+                    items:
+                      properties:
+                        apiVersion:
+                          type: string
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        namespace:
+                          type: string
+                        payload:
+                          type: object
+                        resource:
+                          type: string
+                        slice:
+                          properties:
+                            continue:
+                              type: boolean
+                            offset:
+                              type: integer
+                            page:
+                              type: integer
+                            perPage:
+                              type: integer
+                          required:
+                          - page
+                          - perPage
+                          type: object
+                        verb:
+                          enum:
+                          - POST
+                          - PUT
+                          - PATCH
+                          - DELETE
+                          - GET
+                          type: string
+                      required:
+                      - id
+                      type: object
+                    type: array
+                required:
+                - items
+                type: object
+              resourcesRefsTemplate:
+                items:
+                  properties:
+                    iterator:
+                      type: string
+                    template:
+                      properties:
+                        apiVersion:
+                          type: string
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        namespace:
+                          type: string
+                        payload:
+                          type: object
+                          x-kubernetes-preserve-unknown-fields: true
+                        resource:
+                          type: string
+                        verb:
+                          enum:
+                          - POST
+                          - PUT
+                          - PATCH
+                          - DELETE
+                          - GET
+                          type: string
+                      type: object
+                  type: object
+                type: array
+              widgetData:
+                properties:
+                  items:
+                    items:
+                      properties:
+                        resourceRefId:
+                          type: string
+                      required:
+                      - resourceRefId
+                      type: object
+                    type: array
+                type: object
+              widgetDataTemplate:
+                items:
+                  properties:
+                    expression:
+                      type: string
+                    forPath:
+                      type: string
+                  type: object
+                type: array
+            type: object
+          status:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
