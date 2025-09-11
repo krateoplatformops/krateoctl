@@ -54,20 +54,6 @@ spec:
                 type: object
               resourcesRefs:
                 properties:
-                  _slice_:
-                    properties:
-                      continue:
-                        type: boolean
-                      offset:
-                        type: integer
-                      page:
-                        type: integer
-                      perPage:
-                        type: integer
-                    required:
-                    - page
-                    - perPage
-                    type: object
                   items:
                     items:
                       properties:
@@ -109,6 +95,20 @@ spec:
                       - id
                       type: object
                     type: array
+                  slice:
+                    properties:
+                      continue:
+                        type: boolean
+                      offset:
+                        type: integer
+                      page:
+                        type: integer
+                      perPage:
+                        type: integer
+                    required:
+                    - page
+                    - perPage
+                    type: object
                 required:
                 - items
                 type: object

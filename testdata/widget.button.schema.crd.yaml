@@ -54,7 +54,7 @@ spec:
                 type: object
               resourcesRefs:
                 properties:
-                  _slice_:
+                  slice:
                     properties:
                       continue:
                         type: boolean
