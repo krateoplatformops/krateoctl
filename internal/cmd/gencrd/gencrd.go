@@ -13,7 +13,7 @@ import (
 
 	"github.com/krateoplatformops/crdgen"
 	"github.com/krateoplatformops/krateoctl/internal/subcommands"
-	"github.com/krateoplatformops/krateoctl/internal/util/jsonschema"
+	"github.com/krateoplatformops/krateoctl/jsonschema"
 	runtimeschema "k8s.io/apimachinery/pkg/runtime/schema"
 )
 
