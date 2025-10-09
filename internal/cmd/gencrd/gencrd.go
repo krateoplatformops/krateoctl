@@ -11,10 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/krateoplatformops/crdgen"
+	"github.com/krateoplatformops/crdgen/v2"
 	"github.com/krateoplatformops/krateoctl/internal/subcommands"
 	"github.com/krateoplatformops/krateoctl/jsonschema"
-	runtimeschema "k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 func Command() subcommands.Command {
@@ -141,26 +140,24 @@ func (c *genCRDCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...any) sub
 		return subcommands.ExitFailure
 	}
 
+	os.Setenv("KEEP_CODE", "1")
+
 	opts := crdgen.Options{
-		WorkDir: "widgets",
-		GVK: runtimeschema.GroupVersionKind{
-			Group:   widgetsGroup,
-			Version: version,
-			Kind:    kind,
-		},
-		Categories:             []string{"widgets", "krateo"},
-		SpecJsonSchemaGetter:   fromBytes(dat),
-		StatusJsonSchemaGetter: fromBytes([]byte(preserveUnknownFields)),
-		Verbose:                false,
+		Group:        widgetsGroup,
+		Version:      version,
+		Kind:         kind,
+		Categories:   []string{"widgets", "krateo"},
+		SpecSchema:   []byte(dat),
+		StatusSchema: []byte(preserveUnknownFields),
 	}
 
-	res := crdgen.Generate(ctx, opts)
-	if res.Err != nil {
-		fmt.Fprintf(os.Stderr, "error: unable to generate CRD: %v\n", res.Err)
+	res, err := crdgen.Generate(opts)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: unable to generate CRD: %v\n", err)
 		return subcommands.ExitFailure
 	}
 
-	err = os.WriteFile(c.crdFile, res.Manifest, 0644)
+	err = os.WriteFile(c.crdFile, res, 0644)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return subcommands.ExitFailure

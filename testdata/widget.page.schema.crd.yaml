@@ -40,6 +40,8 @@ spec:
               In CamelCase.
               More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
             type: string
+          metadata:
+            type: object
           spec:
             properties:
               apiRef:
@@ -74,12 +76,17 @@ spec:
                             continue:
                               type: boolean
                             offset:
+                              format: int32
                               type: integer
                             page:
+                              format: int32
                               type: integer
                             perPage:
+                              format: int32
                               type: integer
                           required:
+                          - continue
+                          - offset
                           - page
                           - perPage
                           type: object
@@ -92,7 +99,14 @@ spec:
                           - GET
                           type: string
                       required:
+                      - apiVersion
                       - id
+                      - name
+                      - namespace
+                      - payload
+                      - resource
+                      - slice
+                      - verb
                       type: object
                     type: array
                   slice:
@@ -100,17 +114,23 @@ spec:
                       continue:
                         type: boolean
                       offset:
+                        format: int32
                         type: integer
                       page:
+                        format: int32
                         type: integer
                       perPage:
+                        format: int32
                         type: integer
                     required:
+                    - continue
+                    - offset
                     - page
                     - perPage
                     type: object
                 required:
                 - items
+                - slice
                 type: object
               resourcesRefsTemplate:
                 items:
@@ -129,7 +149,6 @@ spec:
                           type: string
                         payload:
                           type: object
-                          x-kubernetes-preserve-unknown-fields: true
                         resource:
                           type: string
                         verb:
@@ -140,7 +159,18 @@ spec:
                           - DELETE
                           - GET
                           type: string
+                      required:
+                      - apiVersion
+                      - id
+                      - name
+                      - namespace
+                      - payload
+                      - resource
+                      - verb
                       type: object
+                  required:
+                  - iterator
+                  - template
                   type: object
                 type: array
               widgetData:
@@ -148,13 +178,60 @@ spec:
                   items:
                     items:
                       properties:
-                        resourceRefId:
+                        apiVersion:
+                          type: string
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        namespace:
+                          type: string
+                        payload:
+                          type: object
+                        resource:
+                          type: string
+                        slice:
+                          properties:
+                            continue:
+                              type: boolean
+                            offset:
+                              format: int32
+                              type: integer
+                            page:
+                              format: int32
+                              type: integer
+                            perPage:
+                              format: int32
+                              type: integer
+                          required:
+                          - continue
+                          - offset
+                          - page
+                          - perPage
+                          type: object
+                        verb:
+                          enum:
+                          - POST
+                          - PUT
+                          - PATCH
+                          - DELETE
+                          - GET
                           type: string
                       required:
-                      - resourceRefId
+                      - apiVersion
+                      - id
+                      - name
+                      - namespace
+                      - payload
+                      - resource
+                      - slice
+                      - verb
                       type: object
                     type: array
+                required:
+                - items
                 type: object
+                x-kubernetes-preserve-unknown-fields: true
               widgetDataTemplate:
                 items:
                   properties:
@@ -162,12 +239,25 @@ spec:
                       type: string
                     forPath:
                       type: string
+                  required:
+                  - expression
+                  - forPath
                   type: object
                 type: array
+            required:
+            - apiRef
+            - resourcesRefs
+            - resourcesRefsTemplate
+            - widgetData
+            - widgetDataTemplate
             type: object
           status:
             type: object
             x-kubernetes-preserve-unknown-fields: true
+        required:
+        - metadata
+        - spec
+        - status
         type: object
     served: true
     storage: true
