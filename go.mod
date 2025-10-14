@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/aquasecurity/table v1.10.0
-	github.com/krateoplatformops/crdgen/v2 v2.0.0-20251010063716-7e46ecd3ae3d
+	github.com/krateoplatformops/crdgen/v2 v2.0.0-20251014081625-e983eb812e90
 	github.com/krateoplatformops/plumbing v0.7.2
 	github.com/magiconair/properties v1.8.10
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
