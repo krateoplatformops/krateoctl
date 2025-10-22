@@ -9,6 +9,7 @@ import (
 
 	"github.com/krateoplatformops/krateoctl/internal/cmd/gencrd"
 	"github.com/krateoplatformops/krateoctl/internal/cmd/genschema"
+	"github.com/krateoplatformops/krateoctl/internal/cmd/users"
 	"github.com/krateoplatformops/krateoctl/internal/subcommands"
 )
 
@@ -31,6 +32,7 @@ func main() {
 	}
 	tool.Register(genschema.Command(), "")
 	tool.Register(gencrd.Command(), "")
+	tool.Register(users.AddCommand(), "")
 
 	flag.Parse()
 
