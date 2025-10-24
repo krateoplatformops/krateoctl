@@ -85,8 +85,6 @@ spec:
                               format: int32
                               type: integer
                           required:
-                          - continue
-                          - offset
                           - page
                           - perPage
                           type: object
@@ -99,14 +97,7 @@ spec:
                           - GET
                           type: string
                       required:
-                      - apiVersion
                       - id
-                      - name
-                      - namespace
-                      - payload
-                      - resource
-                      - slice
-                      - verb
                       type: object
                     type: array
                   slice:
@@ -123,14 +114,11 @@ spec:
                         format: int32
                         type: integer
                     required:
-                    - continue
-                    - offset
                     - page
                     - perPage
                     type: object
                 required:
                 - items
-                - slice
                 type: object
               resourcesRefsTemplate:
                 items:
@@ -159,18 +147,7 @@ spec:
                           - DELETE
                           - GET
                           type: string
-                      required:
-                      - apiVersion
-                      - id
-                      - name
-                      - namespace
-                      - payload
-                      - resource
-                      - verb
                       type: object
-                  required:
-                  - iterator
-                  - template
                   type: object
                 type: array
               widgetData:
@@ -204,8 +181,6 @@ spec:
                               format: int32
                               type: integer
                           required:
-                          - continue
-                          - offset
                           - page
                           - perPage
                           type: object
@@ -218,18 +193,9 @@ spec:
                           - GET
                           type: string
                       required:
-                      - apiVersion
                       - id
-                      - name
-                      - namespace
-                      - payload
-                      - resource
-                      - slice
-                      - verb
                       type: object
                     type: array
-                required:
-                - items
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
               widgetDataTemplate:
@@ -239,25 +205,12 @@ spec:
                       type: string
                     forPath:
                       type: string
-                  required:
-                  - expression
-                  - forPath
                   type: object
                 type: array
-            required:
-            - apiRef
-            - resourcesRefs
-            - resourcesRefsTemplate
-            - widgetData
-            - widgetDataTemplate
             type: object
           status:
             type: object
             x-kubernetes-preserve-unknown-fields: true
-        required:
-        - metadata
-        - spec
-        - status
         type: object
     served: true
     storage: true
