@@ -1,0 +1,30 @@
+# @schema
+# description: Example Hello World configuration
+# type: object
+# @schema
+helloWorld:
+  # @schema
+  # description: Application enabled flag
+  # type: boolean
+  # default: true
+  # @schema
+  enabled: true
+
+  # @schema
+  # description: List of greeting messages
+  # type: array
+  # items:
+  #   type: object
+  #   properties:
+  #     language:
+  #       type: string
+  #     message:
+  #       type: string
+   # @schema
+  greetings:
+  - language: English
+    message: "Hello World!"
+  - language: Italian
+    message: "Ciao Mondo!"
+  - language: Spanish
+    message: "¡Hola Mundo!"

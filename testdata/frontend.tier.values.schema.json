@@ -1,0 +1,226 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "backend": {
+      "additionalProperties": false,
+      "description": "Backend tier configuration (apps and backing services)",
+      "properties": {
+        "deployments": {
+          "description": "List of backend Deployments to create",
+          "items": {
+            "properties": {
+              "cloudnativepg": {
+                "properties": {
+                  "clusters": {
+                    "items": {
+                      "properties": {
+                        "clusterName": {
+                          "type": "string"
+                        },
+                        "databaseName": {
+                          "type": "string"
+                        },
+                        "instances": {
+                          "type": "integer"
+                        },
+                        "storageSize": {
+                          "type": "string"
+                        },
+                        "user": {
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              },
+              "hazelcast": {
+                "properties": {
+                  "clusters": {
+                    "items": {
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "size": {
+                          "type": "integer"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "licenseKey": {
+                    "type": "string"
+                  },
+                  "licenseKeyName": {
+                    "type": "string"
+                  },
+                  "repository": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "image": {
+                "type": "string"
+              },
+              "kafka": {
+                "properties": {
+                  "clusterName": {
+                    "type": "string"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "replicas": {
+                    "type": "integer"
+                  },
+                  "topics": {
+                    "items": {
+                      "properties": {
+                        "partitions": {
+                          "type": "integer"
+                        },
+                        "replicas": {
+                          "type": "integer"
+                        },
+                        "topicName": {
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "version": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "mongodb_operator": {
+                "properties": {
+                  "clusters": {
+                    "items": {
+                      "properties": {
+                        "clusterName": {
+                          "type": "string"
+                        },
+                        "opsManager": {
+                          "properties": {
+                            "members": {
+                              "type": "integer"
+                            },
+                            "replicas": {
+                              "type": "integer"
+                            },
+                            "version": {
+                              "type": "string"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "password": {
+                          "type": "string"
+                        },
+                        "replicas": {
+                          "type": "integer"
+                        },
+                        "storageSize": {
+                          "type": "string"
+                        },
+                        "username": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              },
+              "name": {
+                "type": "string"
+              },
+              "port": {
+                "type": "integer"
+              },
+              "replicas": {
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "title": "deployments",
+          "type": "array"
+        },
+        "enabled": {
+          "default": true,
+          "description": "Whether to deploy the backend tier",
+          "title": "enabled",
+          "type": "boolean"
+        }
+      },
+      "title": "backend",
+      "type": "object"
+    },
+    "frontend": {
+      "additionalProperties": false,
+      "description": "Frontend tier configuration",
+      "properties": {
+        "deployments": {
+          "description": "List of frontend Deployments to create",
+          "items": {
+            "properties": {
+              "image": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "port": {
+                "type": "integer"
+              },
+              "replicas": {
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "title": "deployments",
+          "type": "array"
+        },
+        "enabled": {
+          "default": true,
+          "description": "Whether to deploy the frontend tier",
+          "title": "enabled",
+          "type": "boolean"
+        }
+      },
+      "title": "frontend",
+      "type": "object"
+    }
+  },
+  "type": "object"
+}
