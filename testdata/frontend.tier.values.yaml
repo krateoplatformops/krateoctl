@@ -1,0 +1,199 @@
+# @schema
+# description: Frontend tier configuration
+# type: object
+# @schema
+frontend:
+  # @schema
+  # description: Whether to deploy the frontend tier
+  # type: boolean
+  # default: true
+  # @schema
+  enabled: true
+
+  # @schema
+  # description: List of frontend Deployments to create
+  # type: array
+  # items:
+  #   type: object
+  #   properties:
+  #     name:
+  #       type: string
+  #     image:
+  #       type: string
+  #     port:
+  #       type: integer
+  #     replicas:
+  #       type: integer
+  # @schema
+  deployments:
+  - name: frontend-one
+    image: nginx:latest
+    port: 80
+    replicas: 1
+
+# @schema
+# description: Backend tier configuration (apps and backing services)
+# type: object
+# @schema
+backend:
+  # @schema
+  # description: Whether to deploy the backend tier
+  # type: boolean
+  # default: true
+  # @schema
+  enabled: true
+
+  # @schema
+  # description: List of backend Deployments to create
+  # type: array
+  # items:
+  #   type: object
+  #   properties:
+  #     name:
+  #       type: string
+  #     image:
+  #       type: string
+  #     port:
+  #       type: integer
+  #     replicas:
+  #       type: integer
+  #     kafka:
+  #       type: object
+  #       properties:
+  #         enabled:
+  #           type: boolean
+  #         clusterName:
+  #           type: string
+  #         version:
+  #           type: string
+  #         replicas:
+  #           type: integer
+  #         topics:
+  #           type: array
+  #           items:
+  #             type: object
+  #             properties:
+  #               topicName:
+  #                 type: string
+  #               partitions:
+  #                 type: integer
+  #               replicas:
+  #                 type: integer
+  #     hazelcast:
+  #       type: object
+  #       properties:
+  #         enabled:
+  #           type: boolean
+  #         licenseKey:
+  #           type: string
+  #         licenseKeyName:
+  #           type: string
+  #         repository:
+  #           type: string
+  #         version:
+  #           type: string
+  #         clusters:
+  #           type: array
+  #           items:
+  #             type: object
+  #             properties:
+  #               name:
+  #                 type: string
+  #               size:
+  #                 type: integer
+  #     mongodb_operator:
+  #       type: object
+  #       properties:
+  #         enabled:
+  #           type: boolean
+  #         clusters:
+  #           type: array
+  #           items:
+  #             type: object
+  #             properties:
+  #               clusterName:
+  #                 type: string
+  #               replicas:
+  #                 type: integer
+  #               version:
+  #                 type: string
+  #               storageSize:
+  #                 type: string
+  #               username:
+  #                 type: string
+  #               password:
+  #                 type: string
+  #               opsManager:
+  #                 type: object
+  #                 properties:
+  #                   replicas:
+  #                     type: integer
+  #                   members:
+  #                     type: integer
+  #                   version:
+  #                     type: string
+  #     cloudnativepg:
+  #       type: object
+  #       properties:
+  #         enabled:
+  #           type: boolean
+  #         clusters:
+  #           type: array
+  #           items:
+  #             type: object
+  #             properties:
+  #               clusterName:
+  #                 type: string
+  #               instances:
+  #                 type: integer
+  #               storageSize:
+  #                 type: string
+  #               databaseName:
+  #                 type: string
+  #               user:
+  #                 type: string
+  # @schema
+  deployments:
+  - name: backend-one
+    image: openeuler/spring-boot:latest
+    port: 8080
+    replicas: 1
+    kafka:
+      enabled: true
+      clusterName: kafka
+      version: 4.1.0
+      replicas: 1
+      topics:
+      - topicName: first-topic
+        partitions: 3
+        replicas: 1
+    hazelcast:
+      enabled: true
+      licenseKey: TrialLicense#10Nodes#eyJhbGxvd2VkTmF0aXZlTWVtb3J5U2l6ZSI6MTAwLCJhbGxvd2VkTnVtYmVyT2ZOb2RlcyI6MTAsImFsbG93ZWRUaWVyZWRTdG9yZVNpemUiOjAsImFsbG93ZWRUcGNDb3JlcyI6MCwiY3JlYXRpb25EYXRlIjoxNzYxODQ3ODcwLjYzNjUyOTU1OSwiZXhwaXJ5RGF0ZSI6MTc2NDM3NDM5OS45OTk5OTk5OTksImZlYXR1cmVzIjpbMCwyLDMsNCw1LDYsNyw4LDEwLDExLDEzLDE0LDE1LDE3LDIxLDIyXSwiZ3JhY2VQZXJpb2QiOjAsImhhemVsY2FzdFZlcnNpb24iOjk5LCJvZW0iOmZhbHNlLCJ0cmlhbCI6dHJ1ZSwidmVyc2lvbiI6IlY3In0=.7Wh2kBN9XyTR6J4rwj18vvrMvFk37ckhw21VmVfKJ9-sYAEscbMOj20SDn7tzXkBqsurfXYpb3Ke0dMBrA0qDQ==
+      licenseKeyName: hazelcast-license-key
+      repository: docker.io/hazelcast/hazelcast
+      version: 5.6.0
+      clusters:
+      - name: hz-first
+        size: 1
+    mongodb_operator:
+      enabled: true
+      clusters:
+      - clusterName: mongodb-one
+        replicas: 1
+        version: "8.0.0"
+        storageSize: "2Gi"
+        username: myuser
+        password: ""
+        opsManager:
+          replicas: 1
+          members: 3
+          version: "8.0.0"
+    cloudnativepg:
+      enabled: true
+      clusters:
+      - clusterName: cnpg-the-first
+        instances: 1
+        storageSize: "1Gi"
+        databaseName: appdb
+        user: appuser
