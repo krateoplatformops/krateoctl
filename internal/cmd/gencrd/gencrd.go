@@ -140,8 +140,6 @@ func (c *genCRDCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...any) sub
 		return subcommands.ExitFailure
 	}
 
-	os.Setenv("KEEP_CODE", "1")
-
 	opts := crdgen.Options{
 		Group:        widgetsGroup,
 		Version:      version,
