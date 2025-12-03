@@ -4,7 +4,7 @@ go 1.25.3
 
 require (
 	github.com/aquasecurity/table v1.10.0
-	github.com/krateoplatformops/plumbing v0.8.0
+	github.com/krateoplatformops/plumbing v0.9.4
 	github.com/magiconair/properties v1.8.10
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	gopkg.in/yaml.v3 v3.0.1
