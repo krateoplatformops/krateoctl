@@ -7,8 +7,10 @@ import (
 	"io"
 	"os"
 
+	"github.com/krateoplatformops/krateoctl/internal/cmd/apply"
 	"github.com/krateoplatformops/krateoctl/internal/cmd/gencrd"
 	"github.com/krateoplatformops/krateoctl/internal/cmd/genschema"
+	"github.com/krateoplatformops/krateoctl/internal/cmd/plan"
 	"github.com/krateoplatformops/krateoctl/internal/cmd/users"
 	"github.com/krateoplatformops/krateoctl/internal/subcommands"
 )
@@ -30,6 +32,12 @@ func main() {
 		fmt.Fprintf(w, "┴ ┴┴└─┴ ┴ ┴ └─┘└─┘\n")
 		fmt.Fprintf(w, "               CTL (ver: %s, bld: %s)\n\n", version, commit)
 	}
+
+	// New commands
+	tool.Register(plan.Command(), "core")
+	tool.Register(apply.Command(), "core")
+
+	// Existing commands
 	tool.Register(genschema.Command(), "")
 	tool.Register(gencrd.Command(), "")
 	tool.Register(users.AddCommand(), "")
