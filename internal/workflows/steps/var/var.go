@@ -53,7 +53,7 @@ func (r *varStepHandler) Handle(ctx context.Context, id string, ext *runtime.Raw
 	res := types.Var{}
 	err := json.Unmarshal(ext.Raw, &res)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to unmarshal var step: %w", err)
 	}
 
 	result := &steps.VarResult{
@@ -80,7 +80,7 @@ func (r *varStepHandler) Handle(ctx context.Context, id string, ext *runtime.Raw
 
 	gv, err := schema.ParseGroupVersion(res.ValueFrom.APIVersion)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse API version: %w", err)
 	}
 
 	namespace := res.ValueFrom.Metadata.Namespace
@@ -96,7 +96,7 @@ func (r *varStepHandler) Handle(ctx context.Context, id string, ext *runtime.Raw
 		GVK:       gv.WithKind(res.ValueFrom.Kind),
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get object: %w", err)
 	}
 
 	val, err := dynamic.Extract(ctx, obj, res.ValueFrom.Selector)

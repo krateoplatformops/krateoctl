@@ -198,3 +198,71 @@ func (c *Config) Set(path []string, value interface{}) error {
 func (c *Config) Raw() map[string]interface{} {
 	return c.data
 }
+
+// Add this method
+func (c *Config) GetEnabledComponents() (map[string]bool, error) {
+	componentsRaw, ok := c.data["components"].(map[string]interface{})
+	if !ok {
+		return map[string]bool{}, nil // No components defined
+	}
+
+	enabled := make(map[string]bool)
+	for name, compRaw := range componentsRaw {
+		if compMap, ok := compRaw.(map[string]interface{}); ok {
+			if enabledVal, ok := compMap["enabled"].(bool); ok {
+				enabled[name] = enabledVal
+			} else {
+				enabled[name] = true // Default to enabled
+			}
+		}
+	}
+
+	return enabled, nil
+}
+
+// Add this method to get the component that owns a step
+func (c *Config) GetComponentForStep(stepID string) (string, error) {
+	componentsRaw, ok := c.data["components"].(map[string]interface{})
+	if !ok {
+		return "", nil
+	}
+
+	for componentName, compRaw := range componentsRaw {
+		if compMap, ok := compRaw.(map[string]interface{}); ok {
+			if stepsRaw, ok := compMap["steps"].([]interface{}); ok {
+				for _, s := range stepsRaw {
+					if stepName, ok := s.(string); ok && stepName == stepID {
+						return componentName, nil
+					}
+				}
+			}
+		}
+	}
+
+	return "", nil
+}
+
+// Add this method
+func (c *Config) GetActiveSteps() ([]*types.Step, error) {
+	steps, err := c.GetSteps()
+	if err != nil {
+		return nil, err
+	}
+
+	enabledComponents, err := c.GetEnabledComponents()
+	if err != nil {
+		return nil, err
+	}
+
+	// Mark steps based on component enablement
+	for i, step := range steps {
+		componentName, _ := c.GetComponentForStep(step.ID)
+		if componentName != "" {
+			if enabled, exists := enabledComponents[componentName]; exists && !enabled {
+				steps[i].Skip = true
+			}
+		}
+	}
+
+	return steps, nil
+}

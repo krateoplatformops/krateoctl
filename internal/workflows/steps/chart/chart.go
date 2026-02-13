@@ -8,26 +8,28 @@ import (
 	"github.com/krateoplatformops/krateoctl/internal/cache"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/getter"
 	helmconfig "github.com/krateoplatformops/plumbing/helm"
+	helm "github.com/krateoplatformops/plumbing/helm/v3"
 
 	"github.com/krateoplatformops/krateoctl/internal/workflows/steps"
 	"github.com/krateoplatformops/krateoctl/internal/workflows/types"
 	"github.com/krateoplatformops/provider-runtime/pkg/logging"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/rest"
 )
 
 type ChartHandlerOptions struct {
-	Dyn        *getter.Getter
-	HelmClient helmconfig.Client
-	Env        *cache.Cache[string, string]
-	Log        logging.Logger
+	Dyn *getter.Getter
+	Env *cache.Cache[string, string]
+	Log logging.Logger
+	Cfg *rest.Config
 }
 
 func ChartHandler(opts ChartHandlerOptions) steps.Handler[*steps.ChartResult] {
 	hdl := &chartStepHandler{
-		cli:  opts.HelmClient,
 		env:  opts.Env,
 		logr: opts.Log,
 		dyn:  opts.Dyn,
+		cfg:  opts.Cfg,
 	}
 	hdl.subst = func(k string) string {
 		if v, ok := hdl.env.Get(k); ok {
@@ -43,7 +45,6 @@ func ChartHandler(opts ChartHandlerOptions) steps.Handler[*steps.ChartResult] {
 var _ steps.Handler[*steps.ChartResult] = (*chartStepHandler)(nil)
 
 type chartStepHandler struct {
-	cli    helmconfig.Client
 	env    *cache.Cache[string, string]
 	ns     string
 	op     steps.Op
@@ -51,6 +52,7 @@ type chartStepHandler struct {
 	render bool
 	logr   logging.Logger
 	dyn    *getter.Getter
+	cfg    *rest.Config
 }
 
 func (r *chartStepHandler) Namespace(ns string) {
@@ -69,27 +71,48 @@ func (r *chartStepHandler) Handle(ctx context.Context, id string, ext *runtime.R
 		return nil, fmt.Errorf("failed to unmarshal chart spec: %w", err)
 	}
 
+	cli, err := helm.NewClient(r.cfg,
+		helm.WithNamespace(r.ns),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create helm client: %w", err)
+	}
+
 	result := &steps.ChartResult{}
 
 	if r.op != steps.Delete {
 		result.Operation = "install/upgrade"
 
-		release, err := r.cli.GetRelease(ctx, spec.ReleaseName, &helmconfig.GetConfig{})
+		var releaseName string
+
+		if spec.URL != "" {
+			releaseName = steps.DeriveReleaseName(spec.URL)
+		}
+		if spec.Repo != "" {
+			releaseName = spec.Repo
+		}
+		if spec.ReleaseName != "" {
+			releaseName = spec.ReleaseName
+		}
+
+		fmt.Println("Release name:", releaseName)
+
+		release, err := cli.GetRelease(ctx, releaseName, &helmconfig.GetConfig{})
 		if err != nil {
 			return nil, fmt.Errorf("failed to get release: %w", err)
 		}
 
 		actionConfig := &helmconfig.ActionConfig{
 			ChartVersion:          spec.Version,
-			ChartName:             spec.Name,
+			ChartName:             spec.Repo,
 			Values:                spec.Values,
 			Wait:                  spec.Wait,
 			InsecureSkipTLSverify: spec.InsecureSkipTLSVerify,
 			Timeout:               spec.Timeout,
 		}
 		if release == nil {
-			release, err = r.cli.Install(ctx,
-				spec.ReleaseName,
+			release, err = cli.Install(ctx,
+				releaseName,
 				spec.URL,
 				&helmconfig.InstallConfig{
 					ActionConfig: actionConfig,
@@ -98,8 +121,8 @@ func (r *chartStepHandler) Handle(ctx context.Context, id string, ext *runtime.R
 				return result, fmt.Errorf("failed to install chart: %w", err)
 			}
 		} else {
-			release, err = r.cli.Upgrade(ctx,
-				spec.ReleaseName,
+			release, err = cli.Upgrade(ctx,
+				releaseName,
 				spec.URL,
 				&helmconfig.UpgradeConfig{
 					ActionConfig: actionConfig,
@@ -129,7 +152,7 @@ func (r *chartStepHandler) Handle(ctx context.Context, id string, ext *runtime.R
 
 	result.Operation = "uninstall"
 
-	err = r.cli.Uninstall(ctx, spec.ReleaseName, &helmconfig.UninstallConfig{
+	err = cli.Uninstall(ctx, spec.ReleaseName, &helmconfig.UninstallConfig{
 		IgnoreNotFound: true,
 	})
 	if err != nil {

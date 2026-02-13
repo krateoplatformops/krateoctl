@@ -14,20 +14,18 @@ import (
 	objecthandler "github.com/krateoplatformops/krateoctl/internal/workflows/steps/object"
 	varhandler "github.com/krateoplatformops/krateoctl/internal/workflows/steps/var"
 	"github.com/krateoplatformops/krateoctl/internal/workflows/types"
-	helmconfig "github.com/krateoplatformops/plumbing/helm"
+	"k8s.io/client-go/rest"
 
-	"github.com/krateoplatformops/plumbing/ptr"
 	"github.com/krateoplatformops/provider-runtime/pkg/logging"
 )
 
 type Opts struct {
-	Getter         *getter.Getter
-	Applier        *applier.Applier
-	Deletor        *deletor.Deletor
-	Log            logging.Logger
-	HelmClient     helmconfig.Client
-	MaxHelmHistory int
-	Namespace      string
+	Getter    *getter.Getter
+	Applier   *applier.Applier
+	Deletor   *deletor.Deletor
+	Log       logging.Logger
+	Cfg       *rest.Config
+	Namespace string
 }
 
 func New(opts Opts) (*Workflow, error) {
@@ -35,28 +33,23 @@ func New(opts Opts) (*Workflow, error) {
 		return nil, fmt.Errorf("dynamic getter, applier, or deletor cannot be nil")
 	}
 
-	if opts.HelmClient == nil {
-		return nil, fmt.Errorf("helm client cannot be nil")
-	}
-
 	if opts.Log == nil {
 		opts.Log = logging.NewNopLogger()
 	}
 
 	wf := &Workflow{
-		logr:       opts.Log.WithValues("namespace", opts.Namespace),
-		ns:         opts.Namespace,
-		env:        cache.New[string, string](),
-		maxHistory: ptr.To(opts.MaxHelmHistory),
+		logr: opts.Log.WithValues("namespace", opts.Namespace),
+		ns:   opts.Namespace,
+		env:  cache.New[string, string](),
 	}
 
 	wf.varHandler = varhandler.VarHandler(opts.Getter, wf.env, opts.Log)
 	wf.objectHandler = objecthandler.ObjectHandler(opts.Applier, opts.Deletor, wf.env, opts.Log)
 	wf.chartHandler = charthandler.ChartHandler(charthandler.ChartHandlerOptions{
-		HelmClient: opts.HelmClient,
-		Env:        wf.env,
-		Log:        opts.Log,
-		Dyn:        opts.Getter,
+		Env: wf.env,
+		Log: opts.Log,
+		Dyn: opts.Getter,
+		Cfg: opts.Cfg,
 	})
 
 	return wf, nil
@@ -104,7 +97,6 @@ type Workflow struct {
 	varHandler    steps.Handler[*steps.VarResult]
 	objectHandler steps.Handler[*steps.ObjectResult]
 	chartHandler  steps.Handler[*steps.ChartResult]
-	maxHistory    *int
 	op            steps.Op
 }
 

@@ -42,17 +42,16 @@ type Credentials struct {
 
 type ChartSpec struct {
 	// Repository: Helm repository URL, required if ChartSpec.URL not set
-	Repository string `json:"repository,omitempty"`
+	URL string `json:"url,omitempty"`
 	// Name of Helm chart, required if ChartSpec.URL not set
-	Name string `json:"name,omitempty"`
+	Repo string `json:"repo,omitempty"`
 	// Version of Helm chart, late initialized with latest version if not set
 	Version string `json:"version,omitempty"`
-	// URL to chart package (typically .tgz), optional and overrides others fields in the spec
-	URL string `json:"url,omitempty"`
+
 	// // PullSecretRef is reference to the secret containing credentials to helm repository
 	// PullSecretRef prv1.SecretKeySelector `json:"pullSecretRef,omitempty"`
 
-	// ReleaseName is the name of the release. If not set, Name will be used or it will be deriverd from the URL
+	// ReleaseName is the name of the release. If not set, Repo will be used or it will be deriverd from the URL
 	// +optional
 	ReleaseName string `json:"releaseName,omitempty"`
 
@@ -60,7 +59,7 @@ type ChartSpec struct {
 	MaxHistory *int `json:"maxHistory,omitempty"`
 
 	// Namespace to install the release into.
-	//Namespace string `json:"namespace"`
+	Namespace string `json:"namespace"`
 	// SkipCreateNamespace won't create the namespace for the release. This requires the namespace to already exist.
 	SkipCreateNamespace bool `json:"skipCreateNamespace,omitempty"`
 	// Wait for the release to become ready.
@@ -141,6 +140,7 @@ type Step struct {
 	Type StepType `json:"type"`
 	// +kubebuilder:pruning:PreserveUnknownFields
 	With *runtime.RawExtension `json:"with"`
+	Skip bool                  `json:"skip,omitempty"`
 }
 
 func (s *Step) Digest() string {

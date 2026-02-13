@@ -5,7 +5,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log/slog"
 
 	"github.com/krateoplatformops/krateoctl/internal/config"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/applier"
@@ -15,7 +14,6 @@ import (
 	"github.com/krateoplatformops/krateoctl/internal/util/kube"
 	"github.com/krateoplatformops/krateoctl/internal/workflows"
 	"github.com/krateoplatformops/krateoctl/internal/workflows/types"
-	"github.com/krateoplatformops/plumbing/helm/v3"
 
 	"github.com/krateoplatformops/provider-runtime/pkg/logging"
 )
@@ -69,7 +67,7 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 	}
 
 	// Get steps from configuration
-	steps, err := cfg.GetSteps()
+	steps, err := cfg.GetActiveSteps() // Returns steps with Skip already set
 	if err != nil {
 		fmt.Printf("✗ Failed to get steps: %v\n", err)
 		return subcommands.ExitFailure
@@ -110,22 +108,14 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 		return subcommands.ExitFailure
 	}
 
-	// Create Helm client
-	helmClient, err := helm.NewClient(rc, "default", slog.Default().Handler())
-	if err != nil {
-		fmt.Printf("✗ Failed to create Helm client: %v\n", err)
-		return subcommands.ExitFailure
-	}
-
 	// Create workflow
 	wf, err := workflows.New(workflows.Opts{
-		Getter:         g,
-		Applier:        a,
-		Deletor:        d,
-		Log:            logging.NewNopLogger(),
-		HelmClient:     helmClient,
-		MaxHelmHistory: 10,
-		Namespace:      c.namespace,
+		Getter:    g,
+		Applier:   a,
+		Deletor:   d,
+		Log:       logging.NewNopLogger(),
+		Cfg:       rc,
+		Namespace: c.namespace,
 	})
 	if err != nil {
 		fmt.Printf("✗ Failed to create workflow: %v\n", err)
@@ -142,8 +132,7 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 	fmt.Println("═════════════════════════════════════════════════════════════")
 
 	results := wf.Run(ctx, spec, func(s *types.Step) bool {
-		// For this simple implementation, we run all steps sequentially
-		return false
+		return s.Skip // Skip steps marked with skip: true
 	})
 
 	// Check for errors

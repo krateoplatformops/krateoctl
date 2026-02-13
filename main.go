@@ -34,8 +34,8 @@ func main() {
 	}
 
 	// New commands
-	tool.Register(plan.Command(), "core")
-	tool.Register(apply.Command(), "core")
+	tool.Register(plan.Command(), "installation management")
+	tool.Register(apply.Command(), "installation management")
 
 	// Existing commands
 	tool.Register(genschema.Command(), "")

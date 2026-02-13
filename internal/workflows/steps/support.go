@@ -25,7 +25,9 @@ func Strval(v any) string {
 func DeriveReleaseName(repoUrl string) string {
 	releaseName := strings.TrimSuffix(path.Base(repoUrl), ".tgz")
 	versionIndex := strings.LastIndex(releaseName, "-")
-	releaseName = releaseName[:versionIndex]
+	if versionIndex > 0 {
+		releaseName = releaseName[:versionIndex]
+	}
 
 	return releaseName
 }

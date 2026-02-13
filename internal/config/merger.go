@@ -15,7 +15,7 @@ func NewMerger(config *Config) *Merger {
 	return &Merger{config: config}
 }
 
-// ApplyFlags applies CLI flag overrides to the configuration
+// ApplyFlags applies CLI flag overrides only
 // Supports both granular --set flags and shortcut flags like --openshift
 func (m *Merger) ApplyFlags(flags map[string]interface{}) error {
 	for key, value := range flags {
