@@ -1,0 +1,491 @@
+# krateo.yaml - Krateo Platform Configuration
+# Declarative steps-based workflow for platform provisioning.
+# Steps execute sequentially in order, enabling natural dependency ordering.
+
+# Global settings
+global:
+  namespace: krateo-system
+  managedBy: krateoctl
+  
+  image:
+    registry: ghcr.io/krateoplatformops
+    pullPolicy: IfNotPresent
+  
+  serviceDefaults:
+    type: NodePort
+
+# ============================================================================
+# Component Definitions
+# Maps logical components to their implementation steps.
+# Use these names in krateo-overrides.yaml for component-level configuration.
+# ============================================================================
+components:
+  config:
+    description: "Configuration and secrets"
+    steps:
+      - create-jwt-sign-key
+    dependsOn: []
+
+  authn:
+    description: "Authentication and authorization service"
+    steps:
+      - install-authn
+      - extract-authn-port
+    dependsOn: []
+
+  snowplow:
+    description: "Event tracking and telemetry service"
+    steps:
+      - install-snowplow
+      - extract-snowplow-port
+    dependsOn: []
+
+  eventrouter:
+    description: "Event routing service"
+    steps:
+      - install-eventrouter
+    dependsOn: []
+
+  eventsse:
+    description: "Event streaming and storage engine"
+    steps:
+      - install-eventsse-etcd
+      - install-eventsse
+      - extract-eventsse-port
+      - extract-eventsse-internal-port
+      - install-sweeper
+    dependsOn: []
+
+  frontend:
+    description: "Web UI and platform dashboard"
+    steps:
+      - install-frontend
+    dependsOn:
+      - authn
+      - snowplow
+      - eventsse
+
+  portal:
+    description: "Portal starter template"
+    steps:
+      - install-portal
+    dependsOn:
+      - frontend
+
+  core-provider:
+    description: "Core composition and orchestration engine"
+    steps:
+      - install-core-provider
+    dependsOn:
+      - frontend
+
+  oasgen-provider:
+    description: "OpenAPI schema generation provider"
+    steps:
+      - install-oasgen-provider
+    dependsOn:
+      - core-provider
+
+  finops:
+    description: "Cost management and FinOps analytics (optional)"
+    steps:
+      - install-finops-cratedb
+      - install-finops-operator-exporter
+      - install-finops-operator-focus
+      - install-finops-database-handler
+      - extract-finops-database-handler-port
+      - install-finops-database-handler-uploader
+      - install-finops-notebooks
+      - install-finops-composition-definition-parser
+      - install-finops-operator-scraper
+    dependsOn:
+      - eventsse
+
+  opa:
+    description: "Policy engine for governance and compliance"
+    steps:
+      - install-opa
+    dependsOn:
+      - core-provider
+
+# ============================================================================
+# Provisioning Steps (executed in order)
+# Each step represents an operation: creating secrets, installing charts, etc.
+# Edit krateo-overrides.yaml to customize component behavior without modifying this file.
+# ============================================================================
+
+steps:
+  # 1. Create JWT signing secret
+  - id: create-jwt-sign-key
+    type: object
+    with:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: jwt-sign-key
+        namespace: krateo-system
+      type: Opaque
+      stringData:
+        JWT_SIGN_KEY: Lhi4GxBc0LhE
+
+  # 2. Core authentication service (no dependencies)
+  - id: install-authn
+    type: chart
+    with:
+      releaseName: authn
+      repo: authn
+      url: https://charts.krateo.io
+      version: 0.22.2
+      values:
+        image:
+          repository: ghcr.io/krateoplatformops/authn
+          pullPolicy: IfNotPresent
+        service:
+          type: NodePort
+          nodePort: 30082
+        env:
+          AUTHN_KUBECONFIG_SERVER_URL: null
+
+  # 3. Extract authn service port for downstream use
+  - id: extract-authn-port
+    type: var
+    with:
+      name: AUTHN_PORT
+      valueFrom:
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: authn
+          namespace: krateo-system
+        selector: .spec.ports[0].nodePort
+
+  # 4. Event tracking service (no dependencies)
+  - id: install-snowplow
+    type: chart
+    with:
+      repo: snowplow
+      url: https://charts.krateo.io
+      version: 0.20.5
+      values:
+        image:
+          repository: ghcr.io/krateoplatformops/snowplow
+          pullPolicy: IfNotPresent
+        service:
+          type: NodePort
+          nodePort: 30081
+
+  # 5. Extract snowplow port
+  - id: extract-snowplow-port
+    type: var
+    with:
+      name: SNOWPLOW_PORT
+      valueFrom:
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: snowplow
+          namespace: krateo-system
+        selector: .spec.ports[0].nodePort
+
+  # 6. Event routing (no dependencies)
+  - id: install-eventrouter
+    type: chart
+    with:
+      releaseName: eventrouter
+      repo: eventrouter
+      url: https://charts.krateo.io
+      version: 0.6.5
+      values:
+        image:
+          repository: ghcr.io/krateoplatformops/eventstack/eventrouter
+          pullPolicy: IfNotPresent
+
+  # 7. Event storage backend (no dependencies)
+  - id: install-eventsse-etcd
+    type: chart
+    with:
+      releaseName: eventsse-etcd
+      repo: etcd
+      url: https://charts.krateo.io
+      version: 3.6.6
+      values:
+        image:
+          repository: ghcr.io/krateoplatformops/etcd
+          pullPolicy: IfNotPresent
+        persistence:
+          size: 6Gi
+        quotaBackendBytes: "3221225472"
+
+  # 8. Event streaming engine (needs eventsse-etcd from step 7)
+  - id: install-eventsse
+    type: chart
+    with:
+      releaseName: eventsse
+      repo: eventsse
+      url: https://charts.krateo.io
+      version: 0.5.9
+      values:
+        image:
+          repository: ghcr.io/krateoplatformops/eventstack/eventsse
+          pullPolicy: IfNotPresent
+        service:
+          type: NodePort
+          nodePort: 30083
+
+  # 9. Extract eventsse ports
+  - id: extract-eventsse-port
+    type: var
+    with:
+      name: EVENTSSE_PORT
+      valueFrom:
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: eventsse-external
+          namespace: krateo-system
+        selector: .spec.ports[0].nodePort
+
+  - id: extract-eventsse-internal-port
+    type: var
+    with:
+      name: EVENTSSE_INTERNAL_PORT
+      valueFrom:
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: eventsse-internal
+          namespace: krateo-system
+        selector: .spec.ports[0].port
+
+  # 10. Event cleanup (needs eventsse from step 8)
+  - id: install-sweeper
+    type: chart
+    with:
+      releaseName: sweeper
+      repo: sweeper
+      url: https://charts.krateo.io
+      version: 0.2.0
+      values:
+        image:
+          repository: ghcr.io/krateoplatformops/eventstack/sweeper
+          pullPolicy: IfNotPresent
+
+  # 11. Frontend UI (needs authn, snowplow, eventsse from steps 2, 4, 8)
+  - id: install-frontend
+    type: chart
+    with:
+      releaseName: frontend
+      repo: frontend
+      url: https://charts.krateo.io
+      version: 1.0.5
+      values:
+        image:
+          repository: ghcr.io/krateoplatformops/frontend
+          pullPolicy: IfNotPresent
+        service:
+          type: NodePort
+          nodePort: 30080
+        config:
+          AUTHN_API_BASE_URL: http://127.0.0.1:${AUTHN_PORT}
+          SNOWPLOW_API_BASE_URL: http://127.0.0.1:${SNOWPLOW_PORT}
+          EVENTS_PUSH_API_BASE_URL: http://127.0.0.1:${EVENTSSE_PORT}
+          EVENTS_API_BASE_URL: http://127.0.0.1:${EVENTSSE_PORT}
+          INIT: /call?resource=navmenus&apiVersion=widgets.templates.krateo.io/v1beta1&name=sidebar-nav-menu&namespace=krateo-system
+          ROUTES_LOADER: /call?resource=routesloaders&apiVersion=widgets.templates.krateo.io/v1beta1&name=routes-loader&namespace=krateo-system
+
+  # 12. Portal starter (needs frontend from step 11)
+  - id: install-portal
+    type: chart
+    with:
+      releaseName: portal
+      repo: portal
+      url: https://marketplace.krateo.io
+      version: 1.2.0
+
+  # 13. Core composition engine (needs frontend from step 11)
+  - id: install-core-provider
+    type: chart
+    with:
+      releaseName: core-provider
+      repo: core-provider
+      url: https://charts.krateo.io
+      version: 0.35.2
+      values:
+        image:
+          repository: ghcr.io/krateoplatformops/core-provider
+          pullPolicy: IfNotPresent
+        cdc:
+          image:
+            repository: ghcr.io/krateoplatformops/composition-dynamic-controller
+            pullPolicy: IfNotPresent
+        chartInspector:
+          image:
+            repository: ghcr.io/krateoplatformops/chart-inspector
+            pullPolicy: IfNotPresent
+
+  # 14. OAS provider (needs core-provider from step 13)
+  - id: install-oasgen-provider
+    type: chart
+    with:
+      releaseName: oasgen-provider
+      repo: oasgen-provider
+      url: https://charts.krateo.io
+      version: 0.9.0
+      values:
+        image:
+          repository: ghcr.io/krateoplatformops/oasgen-provider
+          pullPolicy: IfNotPresent
+        rdc:
+          image:
+            repository: ghcr.io/krateoplatformops/rest-dynamic-controller
+            pullPolicy: IfNotPresent
+
+  # ============================================================================
+  # FINOPS - Optional cost management module
+  # Can be disabled by removing these steps or setting enabled: false on them
+  # ============================================================================
+
+  # 15. FinOps database backend
+  - id: install-finops-cratedb
+    type: chart
+    with:
+      releaseName: cratedb
+      repo: cratedb
+      url: https://charts.krateo.io
+      version: 0.1.4
+      values:
+        image:
+          repository: ghcr.io/krateoplatformops/crate
+          pullPolicy: IfNotPresent
+        openshift:
+          enabled: false
+
+  # 16. FinOps exporter
+  - id: install-finops-operator-exporter
+    type: chart
+    with:
+      releaseName: finops-operator-exporter
+      repo: finops-operator-exporter
+      url: https://charts.krateo.io
+      version: 0.5.2
+      values:
+        image:
+          repository: ghcr.io/krateoplatformops/finops-operator-exporter
+          pullPolicy: IfNotPresent
+
+  # 17. FinOps cost analyzer
+  - id: install-finops-operator-focus
+    type: chart
+    with:
+      releaseName: finops-operator-focus
+      repo: finops-operator-focus
+      url: https://charts.krateo.io
+      version: 0.4.3
+      values:
+        image:
+          repository: ghcr.io/krateoplatformops/finops-operator-focus
+          pullPolicy: IfNotPresent
+
+  # 18. FinOps database handler (needs cratedb from step 15)
+  - id: install-finops-database-handler
+    type: chart
+    with:
+      releaseName: finops-database-handler
+      repo: finops-database-handler
+      url: https://charts.krateo.io
+      version: 0.5.3
+      values:
+        image:
+          repository: ghcr.io/krateoplatformops/finops-database-handler
+          pullPolicy: IfNotPresent
+        service:
+          type: NodePort
+          nodePort: 30086
+        env:
+          CRATE_HOST: cratedb.krateo-system.svc.cluster.local
+          cratedbUserSystemName: cratedb-system-credentials
+
+  # 19. Extract finops database handler port
+  - id: extract-finops-database-handler-port
+    type: var
+    with:
+      name: FINOPS_DATABASE_HANDLER_INTERNAL_PORT
+      valueFrom:
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: finops-database-handler
+          namespace: krateo-system
+        selector: .spec.ports[0].port
+
+  # 20. FinOps database uploader (needs database-handler from step 18)
+  - id: install-finops-database-handler-uploader
+    type: chart
+    with:
+      releaseName: finops-database-handler-uploader
+      repo: finops-database-handler-uploader
+      url: https://charts.krateo.io
+      version: 0.2.1
+      values:
+        image:
+          repository: ghcr.io/krateoplatformops/finops-database-handler-uploader
+          pullPolicy: IfNotPresent
+        env:
+          FINOPS_DATABASE_HANDLER_ENDPOINT_NAME: finops-database-handler-endpoint
+          FINOPS_DATABASE_HANDLER_ENDPOINT_NAMESPACE: krateo-system
+          DATABASE_CONFIG_NAMESPACE: krateo-system
+
+  # 21. FinOps notebooks
+  - id: install-finops-notebooks
+    type: chart
+    with:
+      releaseName: finops-notebooks
+      repo: finops-notebooks
+      url: https://charts.krateo.io
+      version: 0.1.1
+
+  # 22. FinOps composition parser (needs database-handler from step 18)
+  - id: install-finops-composition-definition-parser
+    type: chart
+    with:
+      releaseName: finops-composition-definition-parser
+      repo: finops-composition-definition-parser
+      url: https://charts.krateo.io
+      version: 0.1.4
+      values:
+        image:
+          repository: ghcr.io/krateoplatformops/finops-composition-definition-parser
+          pullPolicy: IfNotPresent
+        env:
+          URL_DATABASE_HANDLER_PRICING_NOTEBOOK: http://finops-database-handler.krateo-system.svc.cluster.local:${FINOPS_DATABASE_HANDLER_INTERNAL_PORT}/compute/pricingparser
+          DATABASE_CONFIG_NAME: finops-database-handler
+          DATABASE_CONFIG_NAMESPACE: krateo-system
+
+  # 23. FinOps scraper (needs database-handler from step 18)
+  - id: install-finops-operator-scraper
+    type: chart
+    with:
+      releaseName: finops-operator-scraper
+      repo: finops-operator-scraper
+      url: https://charts.krateo.io
+      version: 0.5.0
+      values:
+        image:
+          repository: ghcr.io/krateoplatformops/finops-operator-scraper
+          pullPolicy: IfNotPresent
+        env:
+          URL_DB_WEBSERVICE: http://finops-database-handler.krateo-system.svc.cluster.local:${FINOPS_DATABASE_HANDLER_INTERNAL_PORT}
+
+  # 24. Policy Engine (needs core-provider from step 13)
+  - id: install-opa
+    type: chart
+    with:
+      releaseName: opa-kube-mgmt
+      repo: opa-kube-mgmt
+      url: https://charts.krateo.io
+      version: 0.2.3
+      values:
+        image:
+          repository: ghcr.io/krateoplatformops/opa
+          pullPolicy: IfNotPresent
+          tag: 1.4.2-static
