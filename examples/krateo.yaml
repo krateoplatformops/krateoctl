@@ -24,27 +24,23 @@ components:
     description: "Configuration and secrets"
     steps:
       - create-jwt-sign-key
-    dependsOn: []
 
   authn:
     description: "Authentication and authorization service"
     steps:
       - install-authn
       - extract-authn-port
-    dependsOn: []
 
   snowplow:
     description: "Event tracking and telemetry service"
     steps:
       - install-snowplow
       - extract-snowplow-port
-    dependsOn: []
 
   eventrouter:
     description: "Event routing service"
     steps:
       - install-eventrouter
-    dependsOn: []
 
   eventsse:
     description: "Event streaming and storage engine"
@@ -54,37 +50,26 @@ components:
       - extract-eventsse-port
       - extract-eventsse-internal-port
       - install-sweeper
-    dependsOn: []
 
   frontend:
     description: "Web UI and platform dashboard"
     steps:
       - install-frontend
-    dependsOn:
-      - authn
-      - snowplow
-      - eventsse
 
   portal:
     description: "Portal starter template"
     steps:
       - install-portal
-    dependsOn:
-      - frontend
 
   core-provider:
     description: "Core composition and orchestration engine"
     steps:
       - install-core-provider
-    dependsOn:
-      - frontend
 
   oasgen-provider:
     description: "OpenAPI schema generation provider"
     steps:
       - install-oasgen-provider
-    dependsOn:
-      - core-provider
 
   finops:
     description: "Cost management and FinOps analytics (optional)"
@@ -98,15 +83,11 @@ components:
       - install-finops-notebooks
       - install-finops-composition-definition-parser
       - install-finops-operator-scraper
-    dependsOn:
-      - eventsse
 
   opa:
     description: "Policy engine for governance and compliance"
     steps:
       - install-opa
-    dependsOn:
-      - core-provider
 
 # ============================================================================
 # Provisioning Steps (executed in order)

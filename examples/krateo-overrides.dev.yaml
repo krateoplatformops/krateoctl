@@ -1,0 +1,18 @@
+# krateo-overrides.dev.yaml - Dev profile overrides
+# This file is automatically picked up when you run:
+#   krateoctl plan  --profile dev
+#   krateoctl apply --profile dev
+# together with the base krateo-overrides.yaml.
+
+components:
+  # Example: disable optional FinOps module in dev
+  finops:
+    enabled: false
+
+  # Example: use a lower NodePort for frontend in dev
+  # frontend:
+  #   stepConfig:
+  #     install-frontend:
+  #       helmValues:
+  #         service:
+  #           nodePort: 30080

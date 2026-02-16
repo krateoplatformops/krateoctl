@@ -264,5 +264,142 @@ func (c *Config) GetActiveSteps() ([]*types.Step, error) {
 		}
 	}
 
+	// Apply component-level overrides (values/charts) to chart steps
+	if err := c.applyComponentOverrides(steps); err != nil {
+		return nil, err
+	}
+
 	return steps, nil
+}
+
+// applyComponentOverrides merges component-level overrides into chart steps.
+// Structure supported in configuration (typically via krateo-overrides.yaml):
+//
+// components:
+//
+//	<componentName>:
+//	  enabled: true|false
+//	  helmDefaults:       # optional defaults applied to all chart steps of this component
+//	    ...
+//	  stepConfig:         # optional per-step overrides keyed by step id
+//	    <stepID>:
+//	      helmValues:
+//	        ...
+//
+// Merge order for a given chart step is:
+//
+//	base step values <- component.helmDefaults <- component.stepConfig[stepID].helmValues
+//
+// where later entries override earlier ones on key conflicts.
+func (c *Config) applyComponentOverrides(steps []*types.Step) error {
+	componentsRaw, ok := c.data["components"]
+	if !ok {
+		return nil
+	}
+
+	components, ok := componentsRaw.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("components must be a mapping, got %T", componentsRaw)
+	}
+
+	for _, step := range steps {
+		// Only chart steps have Helm values to override
+		if step.Type != types.TypeChart || step.With == nil || len(step.With.Raw) == 0 {
+			continue
+		}
+
+		componentName, _ := c.GetComponentForStep(step.ID)
+		if componentName == "" {
+			continue
+		}
+
+		compRaw, exists := components[componentName]
+		if !exists {
+			continue
+		}
+
+		compMap, ok := compRaw.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("component %s must be a mapping, got %T", componentName, compRaw)
+		}
+
+		// Optional component-wide default values for all chart steps
+		var compDefaults map[string]interface{}
+		if v, ok := compMap["helmDefaults"]; ok {
+			mv, ok := v.(map[string]interface{})
+			if !ok {
+				return fmt.Errorf("component %s helmDefaults must be a mapping, got %T", componentName, v)
+			}
+			compDefaults = mv
+		}
+
+		// spew.Dump(compMap)
+		// Optional per-step overrides keyed by step ID
+		var stepHelmValues map[string]interface{}
+		if scRaw, ok := compMap["stepConfig"]; ok {
+			scMap, ok := scRaw.(map[string]interface{})
+			if !ok {
+				return fmt.Errorf("component %s stepConfig must be a mapping, got %T", componentName, scRaw)
+			}
+
+			if entryRaw, ok := scMap[step.ID]; ok {
+				entryMap, ok := entryRaw.(map[string]interface{})
+				if !ok {
+					return fmt.Errorf("component %s stepConfig.%s must be a mapping, got %T", componentName, step.ID, entryRaw)
+				}
+
+				if v, ok := entryMap["helmValues"]; ok {
+					mv, ok := v.(map[string]interface{})
+					if !ok {
+						return fmt.Errorf("component %s stepConfig.%s.helmValues must be a mapping, got %T", componentName, step.ID, v)
+					}
+					stepHelmValues = mv
+
+					fmt.Println("Component-level overrides found for step", step.ID)
+					// spew.Dump(stepHelmValues)
+				} else {
+					fmt.Printf("No helmValues overrides found for component %s step %s\n", componentName, step.ID)
+				}
+			} else {
+				fmt.Printf("No stepConfig entry found for component %s step %s\n", componentName, step.ID)
+			}
+		}
+
+		// If there are no values to apply, skip
+		if compDefaults == nil && stepHelmValues == nil {
+			continue
+		}
+
+		// Unmarshal the step's current chart configuration
+		withData := make(map[string]interface{})
+		if err := json.Unmarshal(step.With.Raw, &withData); err != nil {
+			return fmt.Errorf("step %s: failed to unmarshal chart configuration: %w", step.ID, err)
+		}
+
+		stepValues, _ := withData["values"].(map[string]interface{})
+		if stepValues == nil {
+			stepValues = make(map[string]interface{})
+		}
+
+		merged := stepValues
+		if compDefaults != nil {
+			merged = mergeConfigs(merged, compDefaults)
+		}
+		if stepHelmValues != nil {
+			merged = mergeConfigs(merged, stepHelmValues)
+		}
+
+		withData["values"] = merged
+
+		raw, err := json.Marshal(withData)
+		if err != nil {
+			return fmt.Errorf("step %s: failed to marshal chart configuration: %w", step.ID, err)
+		}
+
+		// fmt.Println("Applying overrides for step", step.ID)
+		// fmt.Println("Raw merged configuration:\n", string(raw))
+		step.With.Raw = raw
+	}
+
+	return nil
 }

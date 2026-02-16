@@ -18,6 +18,7 @@ func Command() subcommands.Command {
 type planCmd struct {
 	configFile string
 	dryRun     bool
+	profile    string
 }
 
 func (c *planCmd) Name() string     { return "plan" }
@@ -35,6 +36,7 @@ func (c *planCmd) Usage() string {
 func (c *planCmd) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.configFile, "config", "krateo.yaml", "path to configuration file")
 	f.BoolVar(&c.dryRun, "dry-run", false, "perform dry-run without connecting to cluster")
+	f.StringVar(&c.profile, "profile", "", "optional profile name defined in krateo-overrides.yaml")
 }
 
 func (c *planCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
@@ -42,6 +44,7 @@ func (c *planCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{
 	loader := config.NewLoader(config.LoadOptions{
 		ConfigPath:        c.configFile,
 		UserOverridesPath: "krateo-overrides.yaml",
+		Profile:           c.profile,
 	})
 
 	data, err := loader.Load()

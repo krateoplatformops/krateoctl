@@ -1,0 +1,18 @@
+# krateo-overrides.prod.yaml - Prod profile overrides
+# This file is automatically picked up when you run:
+#   krateoctl plan  --profile prod
+#   krateoctl apply --profile prod
+# together with the base krateo-overrides.yaml.
+
+components:
+  # Example: enable optional FinOps module in prod
+  finops:
+    enabled: true
+
+  # Example: keep frontend configuration equal to base; override here if needed
+  # frontend:
+  #   stepConfig:
+  #     install-frontend:
+  #       helmValues:
+  #         service:
+  #           nodePort: 80

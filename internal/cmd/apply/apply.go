@@ -25,6 +25,7 @@ func Command() subcommands.Command {
 type applyCmd struct {
 	configFile string
 	namespace  string
+	profile    string
 }
 
 func (c *applyCmd) Name() string     { return "apply" }
@@ -42,6 +43,7 @@ func (c *applyCmd) Usage() string {
 func (c *applyCmd) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.configFile, "config", "krateo.yaml", "path to configuration file")
 	f.StringVar(&c.namespace, "namespace", "krateo-system", "kubernetes namespace for deployment")
+	f.StringVar(&c.profile, "profile", "", "optional profile name defined in krateo-overrides.yaml")
 }
 
 func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
@@ -49,6 +51,7 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 	loader := config.NewLoader(config.LoadOptions{
 		ConfigPath:        c.configFile,
 		UserOverridesPath: "krateo-overrides.yaml",
+		Profile:           c.profile,
 	})
 
 	data, err := loader.Load()

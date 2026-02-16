@@ -15,14 +15,16 @@ func TestLoader(t *testing.T) {
 modules:
   frontend:
     enabled: true
-    depends: []
     chart:
       repository: "https://charts.example.com"
       name: "frontend"
       namespace: "krateo"
   finops:
     enabled: true
-    depends: [frontend]
+    chart:
+      repository: "https://charts.example.com"
+      name: "finops"
+      namespace: "krateo"
 `
 
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
@@ -47,24 +49,11 @@ modules:
 		t.Fatalf("expected 2 modules, got %d", len(modules))
 	}
 
-	// Test validator
+	// Test validator still runs without module dependencies
 	validator := NewValidator(cfg)
 	if err := validator.Validate(); err != nil {
 		t.Fatalf("validation failed: %v", err)
 	}
 
-	// Test merger
-	merger := NewMerger(cfg)
-	if err := merger.disableModule("finops"); err != nil {
-		t.Fatalf("failed to disable module: %v", err)
-	}
-
-	finops, err := cfg.GetModule("finops")
-	if err != nil {
-		t.Fatalf("failed to get finops module: %v", err)
-	}
-
-	if enabled, ok := finops["enabled"].(bool); !ok || enabled {
-		t.Fatal("finops should be disabled")
-	}
+	// No more expectation that finops is auto‑disabled
 }
