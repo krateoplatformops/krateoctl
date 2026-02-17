@@ -1,0 +1,104 @@
+# krateo-overrides.yaml - User customizations
+# Place this in your working directory and run: krateoctl plan/apply
+# This file overrides the base krateo.yaml configuration using component names.
+
+# Optional: select a default profile defined below.
+# You can also override this from the CLI with:
+#   krateoctl plan --profile dev
+#   krateoctl apply --profile dev
+#
+# profile: dev
+
+# Predefined profiles (examples)
+# profiles:
+#   dev:
+#     components:
+#       finops:
+#         enabled: false
+#   prod:
+#     components:
+#       finops:
+#         enabled: true
+
+# ============================================================================
+# Component-based Customization
+# Available components are defined in krateo.yaml under 'components' section
+# ============================================================================
+
+components:
+  # Example: Customize authentication service
+  # - enabled:      toggle the whole component on/off
+  # - helmDefaults: defaults applied to ALL chart steps of this component
+  # - stepConfig:   per-step overrides keyed by step id (only for chart steps)
+  authn:
+    stepConfig:
+      install-authn:
+        helmValues:
+          env:
+            AUTHN_DEBUG: "true"  # only applies to install-authn step
+
+  # Example: Customize frontend single chart step via stepConfig
+  frontend:
+    stepConfig:
+      install-frontend:
+        helmValues:
+          env:
+            FRONTEND_DEBUG: "true"  # only applies to install-frontend step
+
+  # Example: Customize eventsse component
+  # - helmDefaults: applied to all eventsse chart steps (install-eventsse-etcd, install-eventsse, install-sweeper)
+  # - stepConfig:   refine settings for a specific chart step only
+  eventsse:
+    stepConfig:
+      install-eventsse:
+        helmValues:
+          env:
+            EVENTSSE_DEBUG: "true"  # only applies to install-eventsse step
+
+  # Example: enable optional FinOps module in prod, disable in dev
+  finops:
+    enabled: false
+
+  # Example: For development - override core-provider with local chart
+  core-provider:
+    stepConfig:
+      install-core-provider:
+        helmValues:
+          env:
+            CORE_PROVIDER_DEBUG: "true"
+          cdc:
+            env:
+              COMPOSITION_CONTROLLER_DEBUG: "true"
+          chartInspector:
+            env:
+              DEBUG: "true"
+  
+
+  oasgen-provider:
+    stepConfig:
+      install-oasgen-provider:
+        helmValues:
+          env:
+            OASGEN_PROVIDER_DEBUG: "true"
+          rdc:
+            env:
+              REST_CONTROLLER_DEBUG: "true"
+  
+
+
+# ============================================================================
+# Alternative: Step-level Overrides (advanced)
+# Only use if you need fine-grained control over individual steps.
+# Otherwise, prefer component-level customization above.
+# ============================================================================
+
+# Example of step-level override (uncomment to use):
+# steps:
+#   - id: install-authn
+#     with:
+#       values:
+#         service:
+#           nodePort: 3000
+#
+#   - id: install-finops-cratedb
+#     skip: true  # Skip this step
