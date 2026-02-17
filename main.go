@@ -7,16 +7,19 @@ import (
 	"io"
 	"os"
 
-	"github.com/krateoplatformops/krateoctl/internal/cmd/apply"
 	"github.com/krateoplatformops/krateoctl/internal/cmd/gencrd"
 	"github.com/krateoplatformops/krateoctl/internal/cmd/genschema"
-	"github.com/krateoplatformops/krateoctl/internal/cmd/plan"
+	"github.com/krateoplatformops/krateoctl/internal/cmd/install"
 	"github.com/krateoplatformops/krateoctl/internal/cmd/users"
 	"github.com/krateoplatformops/krateoctl/internal/subcommands"
 )
 
 const (
 	appName = "krateoctl"
+
+	// Category names for subcommands
+	categoryInstallation = "installation management"
+	categoryUtilities    = "utilities"
 )
 
 var (
@@ -33,14 +36,14 @@ func main() {
 		fmt.Fprintf(w, "               CTL (ver: %s, bld: %s)\n\n", version, commit)
 	}
 
-	// New commands
-	tool.Register(plan.Command(), "installation management")
-	tool.Register(apply.Command(), "installation management")
+	// Installation management commands
 
-	// Existing commands
-	tool.Register(genschema.Command(), "")
-	tool.Register(gencrd.Command(), "")
-	tool.Register(users.AddCommand(), "")
+	tool.Register(install.Command(), categoryInstallation)
+
+	// Utilities
+	tool.Register(genschema.Command(), categoryUtilities)
+	tool.Register(gencrd.Command(), categoryUtilities)
+	tool.Register(users.AddCommand(), categoryUtilities)
 
 	flag.Parse()
 

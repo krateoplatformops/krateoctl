@@ -28,10 +28,34 @@ func (c *planCmd) Synopsis() string { return "preview configuration changes" }
 
 func (c *planCmd) Usage() string {
 	wri := bytes.Buffer{}
-	fmt.Fprintf(&wri, "%s\n\n", c.Synopsis())
+	fmt.Fprintf(&wri, "%s. Load the installation config and print the computed workflow steps as multi-document YAML, without talking to the cluster.\n\n", c.Synopsis())
+
 	fmt.Fprint(&wri, "USAGE:\n\n")
-	fmt.Fprintf(&wri, "  krateoctl %s [FLAGS]\n\n", c.Name())
+	fmt.Fprint(&wri, "  krateoctl install plan [FLAGS]\n\n")
+
 	fmt.Fprint(&wri, "FLAGS:\n\n")
+	fmt.Fprint(&wri, "  -config string\n")
+	fmt.Fprint(&wri, "        path to installation configuration file (default \"krateo.yaml\")\n")
+	fmt.Fprint(&wri, "  -dry-run\n")
+	fmt.Fprint(&wri, "        reserved flag; plan never contacts the cluster\n")
+	fmt.Fprint(&wri, "  -profile string\n")
+	fmt.Fprint(&wri, "        optional profile name defined in krateo-overrides.yaml (e.g. dev, prod)\n\n")
+
+	fmt.Fprint(&wri, "CONVENTIONS:\n\n")
+	fmt.Fprint(&wri, "  - Main config is read from krateo.yaml (overridable with -config).\n")
+	fmt.Fprint(&wri, "  - Overrides are loaded from krateo-overrides.yaml and, when -profile is set, from\n")
+	fmt.Fprint(&wri, "    profile-specific files like krateo-overrides.<profile>.yaml.\n")
+	fmt.Fprint(&wri, "  - Components and steps are filtered according to the active profile; disabled steps\n")
+	fmt.Fprint(&wri, "    are still shown but include 'skip: true' in the output.\n")
+	fmt.Fprint(&wri, "  - Output is a stream of YAML documents, one per step, including 'id', 'type', an\n")
+	fmt.Fprint(&wri, "    optional 'skip', and a 'with' section with the resolved step configuration.\n\n")
+
+	fmt.Fprint(&wri, "EXAMPLES:\n\n")
+	fmt.Fprint(&wri, "  # Preview all steps using the default config file\n")
+	fmt.Fprint(&wri, "  krateoctl install plan\n\n")
+	fmt.Fprint(&wri, "  # Preview steps for the 'dev' profile and save the plan\n")
+	fmt.Fprint(&wri, "  krateoctl install plan -profile dev > plan.yaml\n\n")
+
 	return wri.String()
 }
 
