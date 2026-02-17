@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"os"
 
 	"github.com/krateoplatformops/krateoctl/internal/config"
 	"github.com/krateoplatformops/krateoctl/internal/subcommands"
+	"gopkg.in/yaml.v3"
 )
 
 func Command() subcommands.Command {
@@ -62,8 +64,9 @@ func (c *planCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{
 		return subcommands.ExitFailure
 	}
 
-	// Get steps from configuration
-	steps, err := cfg.GetSteps()
+	// Get steps from configuration, respecting component enable/disable and
+	// component-level overrides (including profile-specific overrides).
+	steps, err := cfg.GetActiveSteps()
 	if err != nil {
 		fmt.Printf("✗ Failed to get steps: %v\n", err)
 		return subcommands.ExitFailure
@@ -74,26 +77,33 @@ func (c *planCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{
 		return subcommands.ExitSuccess
 	}
 
-	// Display plan report
-	fmt.Println("\n📋 Plan Report (Sequential Steps)")
-	fmt.Println("═════════════════════════════════════════════════════════════")
+	// Instead of the current pretty printer, emit multi‑doc YAML
+	enc := yaml.NewEncoder(os.Stdout)
+	defer enc.Close()
 
-	for i, step := range steps {
-		fmt.Printf("\nStep %d: %s [%s]\n", i+1, step.ID, step.Type)
+	for _, step := range steps {
+		doc := map[string]any{
+			"id":   step.ID,
+			"type": step.Type,
+		}
 
-		// For verbose output, show the configuration
-		if c.dryRun && step.With != nil && len(step.With.Raw) > 0 {
-			var config interface{}
-			if err := json.Unmarshal(step.With.Raw, &config); err == nil {
-				data, _ := json.MarshalIndent(config, "  ", "  ")
-				fmt.Printf("  %s\n", string(data))
+		// Include skip flag when the step is disabled for this profile/component.
+		if step.Skip {
+			doc["skip"] = true
+		}
+
+		if step.With != nil && len(step.With.Raw) > 0 {
+			var with any
+			if err := json.Unmarshal(step.With.Raw, &with); err == nil {
+				doc["with"] = with
 			}
 		}
-	}
 
-	fmt.Println("\n═════════════════════════════════════════════════════════════")
-	fmt.Printf("Summary: %d steps in dependency order\n", len(steps))
-	fmt.Printf("Status: ✓ Ready to apply\n\n")
+		if err := enc.Encode(doc); err != nil {
+			fmt.Fprintf(os.Stderr, "✗ Failed to encode plan document: %v\n", err)
+			return subcommands.ExitFailure
+		}
+	}
 
 	return subcommands.ExitSuccess
 }

@@ -354,14 +354,7 @@ func (c *Config) applyComponentOverrides(steps []*types.Step) error {
 						return fmt.Errorf("component %s stepConfig.%s.helmValues must be a mapping, got %T", componentName, step.ID, v)
 					}
 					stepHelmValues = mv
-
-					fmt.Println("Component-level overrides found for step", step.ID)
-					// spew.Dump(stepHelmValues)
-				} else {
-					fmt.Printf("No helmValues overrides found for component %s step %s\n", componentName, step.ID)
 				}
-			} else {
-				fmt.Printf("No stepConfig entry found for component %s step %s\n", componentName, step.ID)
 			}
 		}
 
