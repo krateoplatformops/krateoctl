@@ -48,11 +48,7 @@ type ChartSpec struct {
 	// Version of Helm chart, late initialized with latest version if not set
 	Version string `json:"version,omitempty"`
 
-	// // PullSecretRef is reference to the secret containing credentials to helm repository
-	// PullSecretRef prv1.SecretKeySelector `json:"pullSecretRef,omitempty"`
-
-	// ReleaseName is the name of the release. If not set, Repo will be used or it will be deriverd from the URL
-	// +optional
+	// ReleaseName is the name of the release. If not set, Repo will be used or it will be derived from the URL
 	ReleaseName string `json:"releaseName,omitempty"`
 
 	// MaxHistory is the maximum number of helm releases to keep in history
@@ -66,25 +62,37 @@ type ChartSpec struct {
 	Wait bool `json:"wait,omitempty"`
 
 	// Timeout is the time to wait for any individual kubernetes operation (like Jobs for hooks) to complete. Defaults to 5m.
-	Timeout time.Duration `json:"timeout,omitempty"`
+	Timeout *metav1.Duration `json:"timeout,omitempty"`
 
 	// Deprecated: use Timeout instead. This is the time to wait for the release to become ready. Only applies if wait is also set. Defaults to 5m.
-	// WaitTimeout is the duration Helm will wait for the release to become
-	// ready. Only applies if wait is also set. Defaults to 5m.
 	WaitTimeout *metav1.Duration `json:"waitTimeout,omitempty"`
-	// Set defines the Helm values
-	// Set []*Data `json:"set,omitempty"`
 
 	// Values defines the Helm values
 	Values map[string]any `json:"values,omitempty"`
-	// SkipCRDs skips installation of CRDs for the release.
-	//SkipCRDs bool `json:"skipCRDs,omitempty"`
+
 	// InsecureSkipTLSVerify skips tls certificate checks for the chart download
 	InsecureSkipTLSVerify bool `json:"insecureSkipTLSVerify,omitempty"`
+}
 
-	// // Credentials: credentials for private repos
-	// // +optional
-	// Credentials *Credentials `json:"credentials,omitempty"`
+// SetDefaults applies default values to optional fields.
+// IMPORTANT: You must call this method after unmarshaling the JSON.
+func (c *ChartSpec) SetDefaults() {
+	// Handle Timeout Default (5 minutes)
+	if c.Timeout == nil {
+		if c.WaitTimeout != nil {
+			// Backward compatibility: use WaitTimeout if set
+			c.Timeout = c.WaitTimeout
+		} else {
+			// Default to 5 minutes
+			c.Timeout = &metav1.Duration{Duration: 5 * time.Minute}
+		}
+	}
+
+	// Handle MaxHistory Default (optional, example logic)
+	// if c.MaxHistory == nil {
+	// 	 val := 10
+	// 	 c.MaxHistory = &val
+	// }
 }
 
 type ChartObservation struct {
@@ -123,7 +131,6 @@ func (o *Object) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// +kubebuilder:validation:Enum=object;chart;var
 type StepType string
 
 const (
@@ -133,12 +140,8 @@ const (
 )
 
 type Step struct {
-	// +kubebuilder:validation:Required
-	ID string `json:"id"`
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Enum=object;chart;var
-	Type StepType `json:"type"`
-	// +kubebuilder:pruning:PreserveUnknownFields
+	ID   string                `json:"id"`
+	Type StepType              `json:"type"`
 	With *runtime.RawExtension `json:"with"`
 	Skip bool                  `json:"skip,omitempty"`
 }
@@ -178,13 +181,7 @@ type WorkflowStatus struct {
 	VarList     []Var     `json:"varList,omitempty"`
 }
 
-// +kubebuilder:object:root=true
-
-// +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="SYNCED",type="string",JSONPath=".status.conditions[?(@.type=='Synced')].status"
-// +kubebuilder:printcolumn:name="READY",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].status"
-// +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
-// +kubebuilder:resource:scope=Namespaced,categories={krateo}
+// KrateoPlatformOps is the schema for the configuration object
 type KrateoPlatformOps struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -192,8 +189,6 @@ type KrateoPlatformOps struct {
 	Spec   WorkflowSpec   `json:"spec"`
 	Status WorkflowStatus `json:"status,omitempty"`
 }
-
-// +kubebuilder:object:root=true
 
 // KrateoPlatformOpsList contains a list of KrateoPlatformOps
 type KrateoPlatformOpsList struct {

@@ -17,6 +17,10 @@ import (
 	"k8s.io/client-go/rest"
 )
 
+const (
+	defaultWaitTimeout = "5m"
+)
+
 type ChartHandlerOptions struct {
 	Dyn *getter.Getter
 	Env *cache.Cache[string, string]
@@ -70,10 +74,16 @@ func (r *chartStepHandler) Handle(ctx context.Context, id string, ext *runtime.R
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal chart spec: %w", err)
 	}
+	spec.SetDefaults()
 
+	namespace := r.ns
+	if spec.Namespace != "" {
+		namespace = spec.Namespace
+	}
 	cli, err := helm.NewClient(r.cfg,
-		helm.WithNamespace(r.ns),
+		helm.WithNamespace(namespace),
 	)
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to create helm client: %w", err)
 	}
@@ -108,7 +118,7 @@ func (r *chartStepHandler) Handle(ctx context.Context, id string, ext *runtime.R
 			Values:                spec.Values,
 			Wait:                  spec.Wait,
 			InsecureSkipTLSverify: spec.InsecureSkipTLSVerify,
-			Timeout:               spec.Timeout,
+			Timeout:               spec.Timeout.Duration,
 		}
 		if release == nil {
 			release, err = cli.Install(ctx,
