@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/krateoplatformops/krateoctl/internal/cmd/install/shared"
 	"github.com/krateoplatformops/krateoctl/internal/config"
 	"github.com/krateoplatformops/krateoctl/internal/subcommands"
 	"gopkg.in/yaml.v3"
@@ -19,7 +20,6 @@ func Command() subcommands.Command {
 
 type planCmd struct {
 	configFile string
-	dryRun     bool
 	profile    string
 }
 
@@ -36,8 +36,6 @@ func (c *planCmd) Usage() string {
 	fmt.Fprint(&wri, "FLAGS:\n\n")
 	fmt.Fprint(&wri, "  -config string\n")
 	fmt.Fprint(&wri, "        path to installation configuration file (default \"krateo.yaml\")\n")
-	fmt.Fprint(&wri, "  -dry-run\n")
-	fmt.Fprint(&wri, "        reserved flag; plan never contacts the cluster\n")
 	fmt.Fprint(&wri, "  -profile string\n")
 	fmt.Fprint(&wri, "        optional profile name defined in krateo-overrides.yaml (e.g. dev, prod)\n\n")
 
@@ -61,40 +59,21 @@ func (c *planCmd) Usage() string {
 
 func (c *planCmd) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.configFile, "config", "krateo.yaml", "path to configuration file")
-	f.BoolVar(&c.dryRun, "dry-run", false, "perform dry-run without connecting to cluster")
 	f.StringVar(&c.profile, "profile", "", "optional profile name defined in krateo-overrides.yaml")
 }
 
 func (c *planCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
-	// Load configuration
-	loader := config.NewLoader(config.LoadOptions{
+	result, err := shared.LoadConfigAndSteps(config.LoadOptions{
 		ConfigPath:        c.configFile,
 		UserOverridesPath: "krateo-overrides.yaml",
 		Profile:           c.profile,
 	})
-
-	data, err := loader.Load()
 	if err != nil {
-		fmt.Printf("✗ Failed to load configuration: %v\n", err)
+		fmt.Printf("✗ %v\n", err)
 		return subcommands.ExitFailure
 	}
 
-	cfg := config.NewConfig(data)
-
-	// Validate configuration
-	validator := config.NewValidator(cfg)
-	if err := validator.Validate(); err != nil {
-		fmt.Printf("✗ Configuration validation failed: %v\n", err)
-		return subcommands.ExitFailure
-	}
-
-	// Get steps from configuration, respecting component enable/disable and
-	// component-level overrides (including profile-specific overrides).
-	steps, err := cfg.GetActiveSteps()
-	if err != nil {
-		fmt.Printf("✗ Failed to get steps: %v\n", err)
-		return subcommands.ExitFailure
-	}
+	steps := result.Steps
 
 	if len(steps) == 0 {
 		fmt.Println("ℹ No steps configured")

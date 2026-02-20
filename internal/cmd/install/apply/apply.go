@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 
+	"github.com/krateoplatformops/krateoctl/internal/cmd/install/shared"
 	"github.com/krateoplatformops/krateoctl/internal/config"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/applier"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/deletor"
@@ -14,9 +15,20 @@ import (
 	"github.com/krateoplatformops/krateoctl/internal/util/kube"
 	"github.com/krateoplatformops/krateoctl/internal/workflows"
 	"github.com/krateoplatformops/krateoctl/internal/workflows/types"
+	"k8s.io/client-go/rest"
 
 	"github.com/krateoplatformops/provider-runtime/pkg/logging"
 )
+
+type workflowRunner interface {
+	Run(context.Context, *types.WorkflowSpec, func(*types.Step) bool) []workflows.StepResult[any]
+}
+
+type restConfigProvider func() (*rest.Config, error)
+type getterFactory func(*rest.Config) (*getter.Getter, error)
+type applierFactory func(*rest.Config) (*applier.Applier, error)
+type deletorFactory func(*rest.Config) (*deletor.Deletor, error)
+type workflowFactory func(workflows.Opts) (workflowRunner, error)
 
 func Command() subcommands.Command {
 	return &applyCmd{}
@@ -26,6 +38,43 @@ type applyCmd struct {
 	configFile string
 	namespace  string
 	profile    string
+
+	restConfigFn    restConfigProvider
+	getterFactory   getterFactory
+	applierFactory  applierFactory
+	deletorFactory  deletorFactory
+	workflowFactory workflowFactory
+	errEvaluator    func([]workflows.StepResult[any]) error
+}
+
+func (c *applyCmd) ensureDeps() {
+	if c.restConfigFn == nil {
+		c.restConfigFn = kube.RestConfig
+	}
+
+	if c.getterFactory == nil {
+		c.getterFactory = getter.NewGetter
+	}
+
+	if c.applierFactory == nil {
+		c.applierFactory = applier.NewApplier
+	}
+
+	if c.deletorFactory == nil {
+		c.deletorFactory = deletor.NewDeletor
+	}
+
+	if c.workflowFactory == nil {
+		c.workflowFactory = func(opts workflows.Opts) (workflowRunner, error) {
+			return workflows.New(opts)
+		}
+	}
+
+	if c.errEvaluator == nil {
+		c.errEvaluator = func(results []workflows.StepResult[any]) error {
+			return workflows.Err(results)
+		}
+	}
 }
 
 func (c *applyCmd) Name() string     { return "apply" }
@@ -71,34 +120,19 @@ func (c *applyCmd) SetFlags(f *flag.FlagSet) {
 }
 
 func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
-	// Load configuration
-	loader := config.NewLoader(config.LoadOptions{
+	c.ensureDeps()
+
+	result, err := shared.LoadConfigAndSteps(config.LoadOptions{
 		ConfigPath:        c.configFile,
 		UserOverridesPath: "krateo-overrides.yaml",
 		Profile:           c.profile,
 	})
-
-	data, err := loader.Load()
 	if err != nil {
-		fmt.Printf("✗ Failed to load configuration: %v\n", err)
+		fmt.Printf("✗ %v\n", err)
 		return subcommands.ExitFailure
 	}
 
-	cfg := config.NewConfig(data)
-
-	// Validate configuration
-	validator := config.NewValidator(cfg)
-	if err := validator.Validate(); err != nil {
-		fmt.Printf("✗ Configuration validation failed: %v\n", err)
-		return subcommands.ExitFailure
-	}
-
-	// Get steps from configuration
-	steps, err := cfg.GetActiveSteps() // Returns steps with Skip already set
-	if err != nil {
-		fmt.Printf("✗ Failed to get steps: %v\n", err)
-		return subcommands.ExitFailure
-	}
+	steps := result.Steps
 
 	if len(steps) == 0 {
 		fmt.Println("ℹ No steps configured")
@@ -107,7 +141,7 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 
 	// Load Kubernetes configuration
 	fmt.Println("\n📡 Connecting to Kubernetes cluster...")
-	rc, err := kube.RestConfig()
+	rc, err := c.restConfigFn()
 	if err != nil {
 		fmt.Printf("✗ Failed to load kubeconfig: %v\n", err)
 		fmt.Println("  Make sure you have kubectl configured and KUBECONFIG is set")
@@ -117,30 +151,31 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 	// Create dynamic clients
 	fmt.Println("✓ Kubernetes connection established")
 
-	g, err := getter.NewGetter(rc)
+	g, err := c.getterFactory(rc)
 	if err != nil {
 		fmt.Printf("✗ Failed to create getter client: %v\n", err)
 		return subcommands.ExitFailure
 	}
 
-	a, err := applier.NewApplier(rc)
+	a, err := c.applierFactory(rc)
 	if err != nil {
 		fmt.Printf("✗ Failed to create applier client: %v\n", err)
 		return subcommands.ExitFailure
 	}
 
-	d, err := deletor.NewDeletor(rc)
+	d, err := c.deletorFactory(rc)
 	if err != nil {
 		fmt.Printf("✗ Failed to create deletor client: %v\n", err)
 		return subcommands.ExitFailure
 	}
 
 	// Create workflow
-	wf, err := workflows.New(workflows.Opts{
+	log := logging.NewNopLogger()
+	wf, err := c.workflowFactory(workflows.Opts{
 		Getter:    g,
 		Applier:   a,
 		Deletor:   d,
-		Log:       logging.NewNopLogger(),
+		Log:       log,
 		Cfg:       rc,
 		Namespace: c.namespace,
 	})
@@ -163,7 +198,7 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 	})
 
 	// Check for errors
-	if err := workflows.Err(results); err != nil {
+	if err := c.errEvaluator(results); err != nil {
 		fmt.Printf("\n✗ Workflow failed: %v\n", err)
 		return subcommands.ExitFailure
 	}
