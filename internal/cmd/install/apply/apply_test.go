@@ -100,7 +100,7 @@ type stubWorkflow struct {
 	called bool
 }
 
-func (s *stubWorkflow) Run(_ context.Context, spec *types.WorkflowSpec, _ func(*types.Step) bool) []workflows.StepResult[any] {
+func (s *stubWorkflow) Run(_ context.Context, spec *types.Workflow, _ func(*types.Step) bool) []workflows.StepResult[any] {
 	s.called = true
 	return make([]workflows.StepResult[any], len(spec.Steps))
 }

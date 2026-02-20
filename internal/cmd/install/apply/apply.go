@@ -21,7 +21,7 @@ import (
 )
 
 type workflowRunner interface {
-	Run(context.Context, *types.WorkflowSpec, func(*types.Step) bool) []workflows.StepResult[any]
+	Run(context.Context, *types.Workflow, func(*types.Step) bool) []workflows.StepResult[any]
 }
 
 type restConfigProvider func() (*rest.Config, error)
@@ -185,7 +185,7 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 	}
 
 	// Create workflow spec from steps
-	spec := &types.WorkflowSpec{
+	spec := &types.Workflow{
 		Steps: steps,
 	}
 

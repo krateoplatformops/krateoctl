@@ -157,50 +157,6 @@ func (s *Step) Digest() string {
 	return strconv.FormatUint(hasher.Sum64(), 16)
 }
 
-type WorkflowSpec struct {
+type Workflow struct {
 	Steps []*Step `json:"steps,omitempty"`
-}
-
-type Release struct {
-	ReleaseName  string      `json:"releaseName,omitempty"`
-	ChartName    string      `json:"chartName,omitempty"`
-	ChartVersion string      `json:"chartVersion,omitempty"`
-	AppVersion   string      `json:"appVersion,omitempty"`
-	Namespace    string      `json:"namespace,omitempty"`
-	Status       string      `json:"status,omitempty"`
-	Revision     int         `json:"revision,omitempty"`
-	Updated      metav1.Time `json:"updated,omitempty"`
-}
-
-type WorkflowStatus struct {
-	rtv1.ConditionedStatus `json:",inline"`
-	Digest                 string `json:"digest,omitempty"`
-
-	ObjectList  []Object  `json:"objectList,omitempty"`
-	ReleaseList []Release `json:"releaseList,omitempty"`
-	VarList     []Var     `json:"varList,omitempty"`
-}
-
-// KrateoPlatformOps is the schema for the configuration object
-type KrateoPlatformOps struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-
-	Spec   WorkflowSpec   `json:"spec"`
-	Status WorkflowStatus `json:"status,omitempty"`
-}
-
-// KrateoPlatformOpsList contains a list of KrateoPlatformOps
-type KrateoPlatformOpsList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []KrateoPlatformOps `json:"items"`
-}
-
-func (mg *KrateoPlatformOps) GetCondition(ct rtv1.ConditionType) rtv1.Condition {
-	return mg.Status.GetCondition(ct)
-}
-
-func (mg *KrateoPlatformOps) SetConditions(c ...rtv1.Condition) {
-	mg.Status.SetConditions(c...)
 }

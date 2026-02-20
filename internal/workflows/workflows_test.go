@@ -140,7 +140,7 @@ func TestWorkflowVarOperations(t *testing.T) {
 				t.Fatalf("Failed to create test workflow: %v", err)
 			}
 
-			spec := &types.WorkflowSpec{
+			spec := &types.Workflow{
 				Steps: []*types.Step{
 					{
 						ID:   "set-api-url",
@@ -190,7 +190,7 @@ func TestWorkflowVarOperations(t *testing.T) {
 				t.Fatalf("Failed to create test workflow: %v", err)
 			}
 
-			spec := &types.WorkflowSpec{
+			spec := &types.Workflow{
 				Steps: []*types.Step{
 					{
 						ID:   "extract-config-value",
@@ -243,7 +243,7 @@ func TestWorkflowVarOperations(t *testing.T) {
 			workflow.env.Set("HOST", "example.com")
 			workflow.env.Set("PORT", "8080")
 
-			spec := &types.WorkflowSpec{
+			spec := &types.Workflow{
 				Steps: []*types.Step{
 					{
 						ID:   "compose-url",
@@ -295,7 +295,7 @@ func TestWorkflowObjectOperations(t *testing.T) {
 				t.Fatalf("Failed to create test workflow: %v", err)
 			}
 
-			spec := &types.WorkflowSpec{
+			spec := &types.Workflow{
 				Steps: []*types.Step{
 					{
 						ID:   "create-configmap",
@@ -348,7 +348,7 @@ func TestWorkflowObjectOperations(t *testing.T) {
 				t.Fatalf("Failed to create test workflow: %v", err)
 			}
 
-			spec := &types.WorkflowSpec{
+			spec := &types.Workflow{
 				Steps: []*types.Step{
 					{
 						ID:   "update-configmap",
@@ -411,7 +411,7 @@ func TestWorkflowChartOperations(t *testing.T) {
 				t.Fatalf("Failed to create test workflow: %v", err)
 			}
 
-			spec := &types.WorkflowSpec{
+			spec := &types.Workflow{
 				Steps: []*types.Step{
 					{
 						ID:   "install-test-chart",
