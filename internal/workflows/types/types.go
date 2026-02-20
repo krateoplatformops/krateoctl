@@ -56,8 +56,7 @@ type ChartSpec struct {
 
 	// Namespace to install the release into.
 	Namespace string `json:"namespace"`
-	// SkipCreateNamespace won't create the namespace for the release. This requires the namespace to already exist.
-	SkipCreateNamespace bool `json:"skipCreateNamespace,omitempty"`
+
 	// Wait for the release to become ready.
 	Wait bool `json:"wait,omitempty"`
 
@@ -88,11 +87,10 @@ func (c *ChartSpec) SetDefaults() {
 		}
 	}
 
-	// Handle MaxHistory Default (optional, example logic)
-	// if c.MaxHistory == nil {
-	// 	 val := 10
-	// 	 c.MaxHistory = &val
-	// }
+	if c.MaxHistory == nil {
+		defaultMaxHistory := 10
+		c.MaxHistory = &defaultMaxHistory
+	}
 }
 
 type ChartObservation struct {

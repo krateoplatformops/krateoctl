@@ -17,10 +17,6 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-const (
-	defaultWaitTimeout = "5m"
-)
-
 type ChartHandlerOptions struct {
 	Dyn *getter.Getter
 	Env *cache.Cache[string, string]
@@ -136,22 +132,12 @@ func (r *chartStepHandler) Handle(ctx context.Context, id string, ext *runtime.R
 				spec.URL,
 				&helmconfig.UpgradeConfig{
 					ActionConfig: actionConfig,
+					MaxHistory:   *spec.MaxHistory,
 				})
 			if err != nil {
 				return result, fmt.Errorf("failed to upgrade chart: %w", err)
 			}
 		}
-
-		// if release != nil {
-		// 	result.Status = string(release.Info.Status)
-		// 	result.ChartVersion = release.Chart.Metadata.Version
-		// 	result.AppVersion = release.Chart.Metadata.AppVersion
-		// 	result.ReleaseName = release.Name
-		// 	result.ChartName = release.Chart.Metadata.Name
-		// 	result.Namespace = release.Namespace
-		// 	result.Updated = metav1.NewTime(release.Info.LastDeployed.Time)
-		// 	result.Revision = release.Version
-		// }
 
 		r.logr.Debug(fmt.Sprintf(
 			"[chart:%s]: %s operation completed for release %s",
