@@ -22,7 +22,10 @@ func LoadConfigAndSteps(opts config.LoadOptions) (*LoadResult, error) {
 		return nil, fmt.Errorf("Failed to load configuration: %w", err)
 	}
 
-	cfg := config.NewConfig(data)
+	cfg, err := config.NewConfig(data)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to build configuration: %w", err)
+	}
 
 	validator := config.NewValidator(cfg)
 	if err := validator.Validate(); err != nil {
