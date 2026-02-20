@@ -1,81 +1,87 @@
-//go:build integration
-// +build integration
-
 package steps
 
-// import (
-// 	"fmt"
-// 	"io/fs"
-// 	"log"
+import (
+	"fmt"
+	"testing"
+)
 
-// 	"github.com/go-logr/logr"
-// 	"github.com/go-logr/logr/funcr"
-// 	"github.com/krateoplatformops/krateoctl/internal/helmclient"
-// 	"github.com/krateoplatformops/provider-runtime/pkg/logging"
-// 	"helm.sh/helm/v3/pkg/chart"
-// 	"helm.sh/helm/v3/pkg/chart/loader"
-// 	"k8s.io/client-go/rest"
-// )
+func TestStrval(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    any
+		expected string
+	}{
+		{
+			name:     "string",
+			input:    "hello",
+			expected: "hello",
+		},
+		{
+			name:     "bytes",
+			input:    []byte("world"),
+			expected: "world",
+		},
+		{
+			name:     "error",
+			input:    fmt.Errorf("test error"),
+			expected: "test error",
+		},
+		{
+			name:     "integer",
+			input:    42,
+			expected: "42",
+		},
+		{
+			name:     "nil",
+			input:    nil,
+			expected: "<nil>",
+		},
+	}
 
-// func helmClientForNamespace(rc *rest.Config, ns string) (helmclient.Client, error) {
-// 	opt := &helmclient.RestConfClientOptions{
-// 		Options: &helmclient.Options{
-// 			Namespace:        ns,
-// 			RepositoryCache:  "/tmp/.helmcache",
-// 			RepositoryConfig: "/tmp/.helmrepo",
-// 			Debug:            true,
-// 			Linting:          false, // Change this to false if you don't want linting.
-// 			DebugLog: func(format string, v ...interface{}) {
-// 				log.Printf(format, v...)
-// 			},
-// 		},
-// 		RestConfig: rc,
-// 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := Strval(tt.input)
+			if result != tt.expected {
+				t.Errorf("Strval() got %q, want %q", result, tt.expected)
+			}
+		})
+	}
+}
 
-// 	return helmclient.NewClientFromRestConf(opt)
-// }
+func TestDeriveReleaseName(t *testing.T) {
+	tests := []struct {
+		name     string
+		repoUrl  string
+		expected string
+	}{
+		{
+			name:     "krateo-bff chart",
+			repoUrl:  "https://raw.githubusercontent.com/matteogastaldello/private-charts/main/krateo-bff-0.18.1.tgz",
+			expected: "krateo-bff",
+		},
+		{
+			name:     "simple chart with version",
+			repoUrl:  "mychart-1.2.3.tgz",
+			expected: "mychart",
+		},
+		{
+			name:     "chart without version",
+			repoUrl:  "mychart.tgz",
+			expected: "mychart",
+		},
+		{
+			name:     "chart with multiple dashes",
+			repoUrl:  "my-cool-chart-2.0.0.tgz",
+			expected: "my-cool-chart",
+		},
+	}
 
-// func stdoutLogger() logging.Logger {
-// 	return logging.NewLogrLogger(newStdoutLogger())
-// }
-
-// func newStdoutLogger() logr.Logger {
-// 	return funcr.New(func(prefix, args string) {
-// 		if prefix != "" {
-// 			fmt.Printf("%s: %s\n", prefix, args)
-// 		} else {
-// 			fmt.Println(args)
-// 		}
-// 	}, funcr.Options{})
-// }
-
-// func loadChart(f fs.FS) (*chart.Chart, error) {
-// 	files := []*loader.BufferedFile{}
-
-// 	err := fs.WalkDir(f, ".", func(path string, d fs.DirEntry, err error) error {
-// 		if err != nil {
-// 			return err
-// 		}
-
-// 		if d.IsDir() {
-// 			return nil
-// 		}
-
-// 		data, err := fs.ReadFile(f, path)
-// 		if err != nil {
-// 			return fmt.Errorf("could not read manifest %s: %w", path, err)
-// 		}
-
-// 		files = append(files, &loader.BufferedFile{
-// 			Name: path,
-// 			Data: data,
-// 		})
-
-// 		return nil
-// 	})
-// 	if err != nil {
-// 		return nil, fmt.Errorf("could not walk chart directory: %w", err)
-// 	}
-
-// 	return loader.LoadFiles(files)
-// }
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := DeriveReleaseName(tt.repoUrl)
+			if result != tt.expected {
+				t.Errorf("DeriveReleaseName() got %q, want %q", result, tt.expected)
+			}
+		})
+	}
+}

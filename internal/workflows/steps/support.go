@@ -31,12 +31,3 @@ func DeriveReleaseName(repoUrl string) string {
 
 	return releaseName
 }
-
-// const utf8CharMaxSize = 4
-
-// type cutDirection bool
-
-// const (
-// 	cutLeftToRight cutDirection = true
-// 	cutRightToLeft cutDirection = false
-// )

@@ -104,7 +104,7 @@ func (wf *Workflow) Op(op steps.Op) {
 	wf.op = op
 }
 
-func (wf *Workflow) Run(ctx context.Context, spec *types.WorkflowSpec, skip func(*types.Step) bool) (results []StepResult[any]) {
+func (wf *Workflow) Run(ctx context.Context, spec *types.Workflow, skip func(*types.Step) bool) (results []StepResult[any]) {
 	results = make([]StepResult[any], len(spec.Steps))
 
 	if wf.op == steps.Delete {
