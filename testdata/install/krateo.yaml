@@ -126,6 +126,7 @@ steps:
           nodePort: 30082
         env:
           AUTHN_KUBECONFIG_SERVER_URL: null
+      wait: true
 
   # 3. Extract authn service port for downstream use
   - id: extract-authn-port
