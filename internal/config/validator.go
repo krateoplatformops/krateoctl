@@ -30,13 +30,8 @@ func (v *Validator) Validate() error {
 }
 
 // validateModules validates all module configurations.
-func (v *Validator) validateModules(modules map[string]interface{}) error {
-	for name, modRaw := range modules {
-		mod, ok := modRaw.(map[string]interface{})
-		if !ok {
-			return fmt.Errorf("module %s is not a mapping", name)
-		}
-
+func (v *Validator) validateModules(modules map[string]ModuleConfig) error {
+	for name, mod := range modules {
 		if err := v.validateModule(name, mod); err != nil {
 			return err
 		}
@@ -46,27 +41,21 @@ func (v *Validator) validateModules(modules map[string]interface{}) error {
 }
 
 // validateModule validates a single module configuration.
-func (v *Validator) validateModule(name string, mod map[string]interface{}) error {
+func (v *Validator) validateModule(name string, mod ModuleConfig) error {
 	if name == "" {
 		return fmt.Errorf("module name cannot be empty")
 	}
 
 	// Check if module has chart config
-	if chartRaw, ok := mod["chart"]; ok {
-		if chart, ok := chartRaw.(map[string]interface{}); ok {
-			// Chart must have either repository or URL
-			_, hasRepo := chart["repository"].(string)
-			_, hasURL := chart["url"].(string)
-			if !hasRepo && !hasURL {
-				return fmt.Errorf("module %s: chart must have repository or url", name)
-			}
-			// Chart name is required when repository is specified
-			if repo, hasRepo := chart["repository"].(string); hasRepo && repo != "" {
-				if chartName, ok := chart["name"].(string); !ok || chartName == "" {
-					if chartName, ok := chart["chart"].(string); !ok || chartName == "" {
-						return fmt.Errorf("module %s: chart name is required when repository is specified", name)
-					}
-				}
+	if mod.Chart != nil {
+		hasRepo := mod.Chart.Repository != ""
+		hasURL := mod.Chart.URL != ""
+		if !hasRepo && !hasURL {
+			return fmt.Errorf("module %s: chart must have repository or url", name)
+		}
+		if hasRepo {
+			if mod.Chart.Name == "" && mod.Chart.Chart == "" {
+				return fmt.Errorf("module %s: chart name is required when repository is specified", name)
 			}
 		}
 	}

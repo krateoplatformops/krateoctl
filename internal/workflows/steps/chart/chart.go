@@ -13,12 +13,7 @@ import (
 	"github.com/krateoplatformops/krateoctl/internal/workflows/steps"
 	"github.com/krateoplatformops/krateoctl/internal/workflows/types"
 	"github.com/krateoplatformops/provider-runtime/pkg/logging"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
-)
-
-const (
-	defaultWaitTimeout = "5m"
 )
 
 type ChartHandlerOptions struct {
@@ -67,12 +62,17 @@ func (r *chartStepHandler) Op(op steps.Op) {
 	r.op = op
 }
 
-func (r *chartStepHandler) Handle(ctx context.Context, id string, ext *runtime.RawExtension) (*steps.ChartResult, error) {
+func (r *chartStepHandler) Handle(ctx context.Context, id string, ext *map[string]any) (*steps.ChartResult, error) {
 
 	spec := &types.ChartSpec{}
-	err := json.Unmarshal(ext.Raw, spec)
+	data, err := json.Marshal(ext)
 	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal chart spec: %w", err)
+		return nil, fmt.Errorf("failed to marshal chart step input: %w", err)
+	}
+
+	err = json.Unmarshal(data, spec)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal chart step input: %w", err)
 	}
 	spec.SetDefaults()
 
@@ -136,22 +136,12 @@ func (r *chartStepHandler) Handle(ctx context.Context, id string, ext *runtime.R
 				spec.URL,
 				&helmconfig.UpgradeConfig{
 					ActionConfig: actionConfig,
+					MaxHistory:   *spec.MaxHistory,
 				})
 			if err != nil {
 				return result, fmt.Errorf("failed to upgrade chart: %w", err)
 			}
 		}
-
-		// if release != nil {
-		// 	result.Status = string(release.Info.Status)
-		// 	result.ChartVersion = release.Chart.Metadata.Version
-		// 	result.AppVersion = release.Chart.Metadata.AppVersion
-		// 	result.ReleaseName = release.Name
-		// 	result.ChartName = release.Chart.Metadata.Name
-		// 	result.Namespace = release.Namespace
-		// 	result.Updated = metav1.NewTime(release.Info.LastDeployed.Time)
-		// 	result.Revision = release.Version
-		// }
 
 		r.logr.Debug(fmt.Sprintf(
 			"[chart:%s]: %s operation completed for release %s",

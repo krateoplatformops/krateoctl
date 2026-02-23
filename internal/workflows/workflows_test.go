@@ -13,7 +13,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/e2e-framework/klient/decoder"
 	"sigs.k8s.io/e2e-framework/klient/k8s/resources"
@@ -145,11 +144,9 @@ func TestWorkflowVarOperations(t *testing.T) {
 					{
 						ID:   "set-api-url",
 						Type: types.TypeVar,
-						With: &runtime.RawExtension{
-							Raw: []byte(`{
-                                "name": "API_URL",
-                                "value": "https://api.example.com:8080"
-                            }`),
+						With: &map[string]any{
+							"name":  "API_URL",
+							"value": "https://api.example.com:8080",
 						},
 					},
 				},
@@ -195,19 +192,17 @@ func TestWorkflowVarOperations(t *testing.T) {
 					{
 						ID:   "extract-config-value",
 						Type: types.TypeVar,
-						With: &runtime.RawExtension{
-							Raw: []byte(`{
-                                "name": "EXTRACTED_VALUE",
-                                "valueFrom": {
-                                    "apiVersion": "v1",
-                                    "kind": "ConfigMap",
-                                    "metadata": {
-                                        "name": "test-config",
-                                        "namespace": "krateo-system"
-                                    },
-                                    "selector": ".data.key"
-                                }
-                            }`),
+						With: &map[string]any{
+							"name": "EXTRACTED_VALUE",
+							"valueFrom": map[string]any{
+								"apiVersion": "v1",
+								"kind":       "ConfigMap",
+								"metadata": map[string]any{
+									"name":      "test-config",
+									"namespace": "krateo-system",
+								},
+								"selector": ".data.key",
+							},
 						},
 					},
 				},
@@ -248,11 +243,9 @@ func TestWorkflowVarOperations(t *testing.T) {
 					{
 						ID:   "compose-url",
 						Type: types.TypeVar,
-						With: &runtime.RawExtension{
-							Raw: []byte(`{
-                                "name": "FULL_URL",
-                                "value": "https://$HOST:$PORT/api"
-                            }`),
+						With: &map[string]any{
+							"name":  "FULL_URL",
+							"value": "https://$HOST:$PORT/api",
 						},
 					},
 				},
@@ -300,18 +293,16 @@ func TestWorkflowObjectOperations(t *testing.T) {
 					{
 						ID:   "create-configmap",
 						Type: types.TypeObject,
-						With: &runtime.RawExtension{
-							Raw: []byte(`{
-                                "apiVersion": "v1",
-                                "kind": "ConfigMap",
-                                "metadata": {
-                                    "name": "workflow-test-cm",
-                                    "namespace": "krateo-system"
-                                },
-                                "data": {
-                                    "test-key": "test-value"
-								}
-                            }`),
+						With: &map[string]any{
+							"apiVersion": "v1",
+							"kind":       "ConfigMap",
+							"metadata": map[string]any{
+								"name":      "workflow-test-cm",
+								"namespace": "krateo-system",
+							},
+							"data": map[string]any{
+								"test-key": "test-value",
+							},
 						},
 					},
 				},
@@ -353,18 +344,16 @@ func TestWorkflowObjectOperations(t *testing.T) {
 					{
 						ID:   "update-configmap",
 						Type: types.TypeObject,
-						With: &runtime.RawExtension{
-							Raw: []byte(`{
-                                "apiVersion": "v1",
-                                "kind": "ConfigMap",
-                                "metadata": {
-                                    "name": "workflow-test-cm",
-                                    "namespace": "krateo-system"
-                                },
-                                "data": {
-                                    "updated-key": "updated-value"
-								}
-                            }`),
+						With: &map[string]any{
+							"apiVersion": "v1",
+							"kind":       "ConfigMap",
+							"metadata": map[string]any{
+								"name":      "workflow-test-cm",
+								"namespace": "krateo-system",
+							},
+							"data": map[string]any{
+								"updated-key": "updated-value",
+							},
 						},
 					},
 				},
@@ -416,18 +405,16 @@ func TestWorkflowChartOperations(t *testing.T) {
 					{
 						ID:   "install-test-chart",
 						Type: types.TypeChart,
-						With: &runtime.RawExtension{
-							Raw: []byte(`{
-                                "name": "test-release",
-                                "chart": "nginx",
-                                "version": "1.0.0",
-                                "repository": "https://charts.bitnami.com/bitnami",
-                                "namespace": "krateo-system",
-                                "wait": true,
-                                "data": {
-									 "test-key": "test-value"
-								}
-                            }`),
+						With: &map[string]any{
+							"name":       "test-release",
+							"chart":      "nginx",
+							"version":    "1.0.0",
+							"repository": "https://charts.bitnami.com/bitnami",
+							"namespace":  "krateo-system",
+							"wait":       true,
+							"data": map[string]any{
+								"test-key": "test-value",
+							},
 						},
 					},
 				},

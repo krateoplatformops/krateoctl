@@ -39,7 +39,10 @@ modules:
 	}
 
 	// Test config
-	cfg := NewConfig(data)
+	cfg, err := NewConfig(data)
+	if err != nil {
+		t.Fatalf("failed to create config: %v", err)
+	}
 	modules, err := cfg.GetModules()
 	if err != nil {
 		t.Fatalf("failed to get modules: %v", err)

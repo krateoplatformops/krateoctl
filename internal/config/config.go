@@ -5,50 +5,54 @@ import (
 	"fmt"
 
 	"github.com/krateoplatformops/krateoctl/internal/workflows/types"
-	"k8s.io/apimachinery/pkg/runtime"
+	"gopkg.in/yaml.v3"
 )
 
 // Config represents the fully loaded and validated Krateo configuration.
 type Config struct {
-	data map[string]interface{}
+	data map[string]any
+	doc  *Document
 }
 
 // NewConfig creates a new Config from loaded data.
-func NewConfig(data map[string]interface{}) *Config {
-	return &Config{data: data}
-}
-
-// GetModules returns the modules section of the config.
-// Returns a map[string]interface{} where each key is a module name.
-func (c *Config) GetModules() (map[string]interface{}, error) {
-	modulesRaw, ok := c.data["modules"]
-	if !ok {
-		return make(map[string]interface{}), nil
+func NewConfig(data map[string]any) (*Config, error) {
+	if data == nil {
+		data = make(map[string]any)
 	}
 
-	modules, ok := modulesRaw.(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("modules must be a mapping, got %T", modulesRaw)
-	}
-
-	return modules, nil
-}
-
-// GetModule returns a single module's configuration by name.
-func (c *Config) GetModule(name string) (map[string]interface{}, error) {
-	modules, err := c.GetModules()
+	doc, err := decodeDocument(data)
 	if err != nil {
 		return nil, err
 	}
 
-	modRaw, ok := modules[name]
-	if !ok {
-		return nil, fmt.Errorf("module %s not found", name)
+	return &Config{data: data, doc: doc}, nil
+}
+
+// Document returns the typed configuration document backing this Config instance.
+func (c *Config) Document() *Document {
+	return c.doc
+}
+
+// GetModules returns the modules section of the config.
+// Returns a map[string]ModuleConfig where each key is a module name.
+func (c *Config) GetModules() (map[string]ModuleConfig, error) {
+	if c.doc == nil || len(c.doc.Modules) == 0 {
+		return make(map[string]ModuleConfig), nil
 	}
 
-	mod, ok := modRaw.(map[string]interface{})
+	return c.doc.Modules, nil
+}
+
+// GetModule returns a single module's configuration by name.
+func (c *Config) GetModule(name string) (ModuleConfig, error) {
+	modules, err := c.GetModules()
+	if err != nil {
+		return ModuleConfig{}, err
+	}
+
+	mod, ok := modules[name]
 	if !ok {
-		return nil, fmt.Errorf("module %s is not a mapping", name)
+		return ModuleConfig{}, fmt.Errorf("module %s not found", name)
 	}
 
 	return mod, nil
@@ -57,49 +61,36 @@ func (c *Config) GetModule(name string) (map[string]interface{}, error) {
 // GetSteps returns the steps array from the configuration.
 // Steps represent sequential operations: chart installations, variable extractions, etc.
 func (c *Config) GetSteps() ([]*types.Step, error) {
-	stepsRaw, ok := c.data["steps"]
-	if !ok {
+	if c.doc == nil || len(c.doc.Steps) == 0 {
 		return make([]*types.Step, 0), nil
 	}
 
-	stepsList, ok := stepsRaw.([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("steps must be an array, got %T", stepsRaw)
-	}
-
-	steps := make([]*types.Step, 0, len(stepsList))
-	for i, stepRaw := range stepsList {
-		stepMap, ok := stepRaw.(map[string]interface{})
-		if !ok {
-			return nil, fmt.Errorf("step at index %d is not a mapping", i)
-		}
-
-		step := &types.Step{}
-
-		// Extract id
-		if id, ok := stepMap["id"].(string); ok {
-			step.ID = id
-		} else {
+	steps := make([]*types.Step, 0, len(c.doc.Steps))
+	for i, def := range c.doc.Steps {
+		if def.ID == "" {
 			return nil, fmt.Errorf("step at index %d missing id", i)
 		}
-
-		// Extract type
-		if stepType, ok := stepMap["type"].(string); ok {
-			step.Type = types.StepType(stepType)
-		} else {
-			return nil, fmt.Errorf("step %s missing type", step.ID)
+		if def.Type == "" {
+			return nil, fmt.Errorf("step %s missing type", def.ID)
 		}
 
-		// Extract with (configuration) - marshal to JSON for RawExtension
-		if withData, ok := stepMap["with"]; ok {
-			data, err := json.Marshal(withData)
+		var with *map[string]any
+		if def.With != nil {
+			data, err := json.Marshal(def.With)
 			if err != nil {
-				return nil, fmt.Errorf("step %s: failed to marshal configuration: %w", step.ID, err)
+				return nil, fmt.Errorf("step %s: failed to marshal configuration: %w", def.ID, err)
 			}
-			step.With = &runtime.RawExtension{Raw: data}
+			with = &map[string]any{}
+			if err := json.Unmarshal(data, with); err != nil {
+				return nil, fmt.Errorf("step %s: failed to unmarshal configuration: %w", def.ID, err)
+			}
 		}
 
-		steps = append(steps, step)
+		steps = append(steps, &types.Step{
+			ID:   def.ID,
+			Type: def.Type,
+			With: with,
+		})
 	}
 
 	return steps, nil
@@ -134,15 +125,15 @@ func (c *Config) GetString(path []string, defaultVal string) string {
 }
 
 // getAtPath navigates through nested maps following a path.
-func (c *Config) getAtPath(path []string) (interface{}, error) {
-	current := interface{}(c.data)
+func (c *Config) getAtPath(path []string) (any, error) {
+	current := any(c.data)
 
 	for i, key := range path {
 		if key == "" {
 			continue
 		}
 
-		if currentMap, ok := current.(map[string]interface{}); ok {
+		if currentMap, ok := current.(map[string]any); ok {
 			if next, exists := currentMap[key]; exists {
 				current = next
 			} else {
@@ -157,25 +148,25 @@ func (c *Config) getAtPath(path []string) (interface{}, error) {
 }
 
 // Set navigates through nested maps and sets a value at a path.
-func (c *Config) Set(path []string, value interface{}) error {
+func (c *Config) Set(path []string, value any) error {
 	if len(path) == 0 {
 		return fmt.Errorf("path cannot be empty")
 	}
 
 	// Navigate to parent
-	current := interface{}(c.data)
+	current := any(c.data)
 	for i := 0; i < len(path)-1; i++ {
 		key := path[i]
 		if key == "" {
 			continue
 		}
 
-		if currentMap, ok := current.(map[string]interface{}); ok {
+		if currentMap, ok := current.(map[string]any); ok {
 			if next, exists := currentMap[key]; exists {
 				current = next
 			} else {
 				// Create intermediate maps as needed
-				newMap := make(map[string]interface{})
+				newMap := make(map[string]any)
 				currentMap[key] = newMap
 				current = newMap
 			}
@@ -185,7 +176,7 @@ func (c *Config) Set(path []string, value interface{}) error {
 	}
 
 	// Set the final value
-	if currentMap, ok := current.(map[string]interface{}); ok {
+	if currentMap, ok := current.(map[string]any); ok {
 		currentMap[path[len(path)-1]] = value
 	} else {
 		return fmt.Errorf("expected mapping at final position, got %T", current)
@@ -195,26 +186,23 @@ func (c *Config) Set(path []string, value interface{}) error {
 }
 
 // Raw returns the underlying configuration map.
-func (c *Config) Raw() map[string]interface{} {
+func (c *Config) Raw() map[string]any {
 	return c.data
 }
 
 // Add this method
 func (c *Config) GetEnabledComponents() (map[string]bool, error) {
-	componentsRaw, ok := c.data["components"].(map[string]interface{})
-	if !ok {
-		return map[string]bool{}, nil // No components defined
+	if c.doc == nil || len(c.doc.Components) == 0 {
+		return map[string]bool{}, nil
 	}
 
 	enabled := make(map[string]bool)
-	for name, compRaw := range componentsRaw {
-		if compMap, ok := compRaw.(map[string]interface{}); ok {
-			if enabledVal, ok := compMap["enabled"].(bool); ok {
-				enabled[name] = enabledVal
-			} else {
-				enabled[name] = true // Default to enabled
-			}
+	for name, comp := range c.doc.Components {
+		if comp.Enabled == nil {
+			enabled[name] = true
+			continue
 		}
+		enabled[name] = *comp.Enabled
 	}
 
 	return enabled, nil
@@ -222,19 +210,14 @@ func (c *Config) GetEnabledComponents() (map[string]bool, error) {
 
 // Add this method to get the component that owns a step
 func (c *Config) GetComponentForStep(stepID string) (string, error) {
-	componentsRaw, ok := c.data["components"].(map[string]interface{})
-	if !ok {
+	if c.doc == nil || len(c.doc.Components) == 0 {
 		return "", nil
 	}
 
-	for componentName, compRaw := range componentsRaw {
-		if compMap, ok := compRaw.(map[string]interface{}); ok {
-			if stepsRaw, ok := compMap["steps"].([]interface{}); ok {
-				for _, s := range stepsRaw {
-					if stepName, ok := s.(string); ok && stepName == stepID {
-						return componentName, nil
-					}
-				}
+	for name, comp := range c.doc.Components {
+		for _, step := range comp.Steps {
+			if step == stepID {
+				return name, nil
 			}
 		}
 	}
@@ -289,22 +272,16 @@ func (c *Config) GetActiveSteps() ([]*types.Step, error) {
 // Merge order for a given chart step is:
 //
 //	base step values <- component.helmDefaults <- component.stepConfig[stepID].helmValues
+//	base step with    <- component.helmDefaults.with <- component.stepConfig[stepID].with
 //
 // where later entries override earlier ones on key conflicts.
 func (c *Config) applyComponentOverrides(steps []*types.Step) error {
-	componentsRaw, ok := c.data["components"]
-	if !ok {
+	if c.doc == nil || len(c.doc.Components) == 0 {
 		return nil
 	}
 
-	components, ok := componentsRaw.(map[string]interface{})
-	if !ok {
-		return fmt.Errorf("components must be a mapping, got %T", componentsRaw)
-	}
-
 	for _, step := range steps {
-		// Only chart steps have Helm values to override
-		if step.Type != types.TypeChart || step.With == nil || len(step.With.Raw) == 0 {
+		if step.Type != types.TypeChart || step.With == nil {
 			continue
 		}
 
@@ -313,86 +290,130 @@ func (c *Config) applyComponentOverrides(steps []*types.Step) error {
 			continue
 		}
 
-		compRaw, exists := components[componentName]
-		if !exists {
-			continue
-		}
-
-		compMap, ok := compRaw.(map[string]interface{})
+		component, ok := c.doc.Components[componentName]
 		if !ok {
-			return fmt.Errorf("component %s must be a mapping, got %T", componentName, compRaw)
-		}
-
-		// Optional component-wide default values for all chart steps
-		var compDefaults map[string]interface{}
-		if v, ok := compMap["helmDefaults"]; ok {
-			mv, ok := v.(map[string]interface{})
-			if !ok {
-				return fmt.Errorf("component %s helmDefaults must be a mapping, got %T", componentName, v)
-			}
-			compDefaults = mv
-		}
-
-		// spew.Dump(compMap)
-		// Optional per-step overrides keyed by step ID
-		var stepHelmValues map[string]interface{}
-		if scRaw, ok := compMap["stepConfig"]; ok {
-			scMap, ok := scRaw.(map[string]interface{})
-			if !ok {
-				return fmt.Errorf("component %s stepConfig must be a mapping, got %T", componentName, scRaw)
-			}
-
-			if entryRaw, ok := scMap[step.ID]; ok {
-				entryMap, ok := entryRaw.(map[string]interface{})
-				if !ok {
-					return fmt.Errorf("component %s stepConfig.%s must be a mapping, got %T", componentName, step.ID, entryRaw)
-				}
-
-				if v, ok := entryMap["helmValues"]; ok {
-					mv, ok := v.(map[string]interface{})
-					if !ok {
-						return fmt.Errorf("component %s stepConfig.%s.helmValues must be a mapping, got %T", componentName, step.ID, v)
-					}
-					stepHelmValues = mv
-				}
-			}
-		}
-
-		// If there are no values to apply, skip
-		if compDefaults == nil && stepHelmValues == nil {
 			continue
 		}
 
-		// Unmarshal the step's current chart configuration
-		withData := make(map[string]interface{})
-		if err := json.Unmarshal(step.With.Raw, &withData); err != nil {
-			return fmt.Errorf("step %s: failed to unmarshal chart configuration: %w", step.ID, err)
+		if step.With == nil {
+			step.With = &map[string]any{}
 		}
+		withData := *step.With
 
-		stepValues, _ := withData["values"].(map[string]interface{})
-		if stepValues == nil {
-			stepValues = make(map[string]interface{})
-		}
+		stepValues := ensureMap(withData, "values")
 
-		merged := stepValues
-		if compDefaults != nil {
-			merged = mergeConfigs(merged, compDefaults)
-		}
-		if stepHelmValues != nil {
-			merged = mergeConfigs(merged, stepHelmValues)
-		}
-
-		withData["values"] = merged
-
-		raw, err := json.Marshal(withData)
+		defaultValues, defaultWith, err := splitDefaults(component.HelmDefaults, componentName)
 		if err != nil {
-			return fmt.Errorf("step %s: failed to marshal chart configuration: %w", step.ID, err)
+			return err
+		}
+		if len(defaultValues) > 0 {
+			stepValues = mergeConfigs(stepValues, defaultValues)
+		}
+		if len(defaultWith) > 0 {
+			withData = mergeConfigs(withData, defaultWith)
 		}
 
-		// fmt.Println("Applying overrides for step", step.ID)
-		// fmt.Println("Raw merged configuration:\n", string(raw))
-		step.With.Raw = raw
+		stepSpecificValues, stepSpecificWith, err := parseStepOverrides(component.StepConfig, componentName, step.ID)
+		if err != nil {
+			return err
+		}
+		if len(stepSpecificValues) > 0 {
+			stepValues = mergeConfigs(stepValues, stepSpecificValues)
+		}
+		if len(stepSpecificWith) > 0 {
+			withData = mergeConfigs(withData, stepSpecificWith)
+		}
+
+		step.With = &withData
 	}
 
 	return nil
+}
+
+func splitDefaults(source map[string]any, componentName string) (map[string]any, map[string]any, error) {
+	if len(source) == 0 {
+		return nil, nil, nil
+	}
+
+	values := make(map[string]any)
+	var with map[string]any
+
+	for key, val := range source {
+		if key == "with" {
+			if val == nil {
+				continue
+			}
+			mv, ok := val.(map[string]any)
+			if !ok {
+				return nil, nil, fmt.Errorf("component %s helmDefaults.with must be a mapping, got %T", componentName, val)
+			}
+			with = mv
+			continue
+		}
+		values[key] = val
+	}
+
+	if len(values) == 0 {
+		values = nil
+	}
+
+	return values, with, nil
+}
+
+func parseStepOverrides(stepConfig map[string]map[string]any, componentName, stepID string) (map[string]any, map[string]any, error) {
+	if len(stepConfig) == 0 {
+		return nil, nil, nil
+	}
+
+	entry, ok := stepConfig[stepID]
+	if !ok || len(entry) == 0 {
+		return nil, nil, nil
+	}
+
+	var values map[string]any
+	var with map[string]any
+
+	if raw, ok := entry["helmValues"]; ok {
+		mv, ok := raw.(map[string]any)
+		if !ok {
+			return nil, nil, fmt.Errorf("component %s stepConfig.%s.helmValues must be a mapping, got %T", componentName, stepID, raw)
+		}
+		values = mv
+	}
+
+	if raw, ok := entry["with"]; ok {
+		mv, ok := raw.(map[string]any)
+		if !ok {
+			return nil, nil, fmt.Errorf("component %s stepConfig.%s.with must be a mapping, got %T", componentName, stepID, raw)
+		}
+		with = mv
+	}
+
+	return values, with, nil
+}
+
+func ensureMap(target map[string]any, key string) map[string]any {
+	if existing, ok := target[key]; ok {
+		if existingMap, ok := existing.(map[string]any); ok {
+			return existingMap
+		}
+	}
+
+	newMap := make(map[string]any)
+	target[key] = newMap
+	return newMap
+}
+
+func decodeDocument(data map[string]any) (*Document, error) {
+	body, err := yaml.Marshal(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal config data: %w", err)
+	}
+
+	var doc Document
+	if err := yaml.Unmarshal(body, &doc); err != nil {
+		return nil, fmt.Errorf("failed to decode config document: %w", err)
+	}
+
+	return &doc, nil
 }

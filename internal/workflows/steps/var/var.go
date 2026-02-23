@@ -12,7 +12,6 @@ import (
 	"github.com/krateoplatformops/krateoctl/internal/workflows/steps"
 	"github.com/krateoplatformops/krateoctl/internal/workflows/types"
 	"github.com/krateoplatformops/provider-runtime/pkg/logging"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -49,11 +48,16 @@ func (r *varStepHandler) Namespace(ns string) {
 	r.ns = ns
 }
 
-func (r *varStepHandler) Handle(ctx context.Context, id string, ext *runtime.RawExtension) (*steps.VarResult, error) {
+func (r *varStepHandler) Handle(ctx context.Context, id string, ext *map[string]any) (*steps.VarResult, error) {
 	res := types.Var{}
-	err := json.Unmarshal(ext.Raw, &res)
+	data, err := json.Marshal(ext)
 	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal var step: %w", err)
+		return nil, fmt.Errorf("failed to marshal chart step input: %w", err)
+	}
+
+	err = json.Unmarshal(data, &res)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal var step input: %w", err)
 	}
 
 	result := &steps.VarResult{

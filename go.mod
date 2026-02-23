@@ -10,6 +10,7 @@ require (
 	github.com/magiconair/properties v1.8.10
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/twmb/murmur3 v1.1.8
+	golang.org/x/tools v0.40.0
 	gopkg.in/yaml.v3 v3.0.1
 	helm.sh/helm/v3 v3.20.0
 	k8s.io/api v0.35.0

@@ -5,13 +5,13 @@ package steps
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/e2e-framework/klient/k8s/resources"
 	"sigs.k8s.io/e2e-framework/pkg/env"
@@ -131,8 +131,12 @@ func TestVarStepHandlerE2E(t *testing.T) {
                 "value": "simple-direct-value"
             }`
 
-			ext := &runtime.RawExtension{Raw: []byte(varJSON)}
-			result, err := handler.Handle(ctx, "test-direct-value", ext)
+			ext := map[string]any{}
+			err = json.Unmarshal([]byte(varJSON), &ext)
+			if err != nil {
+				t.Fatalf("Failed to unmarshal var JSON: %v", err)
+			}
+			result, err := handler.Handle(ctx, "test-direct-value", &ext)
 
 			if err != nil {
 				t.Fatalf("Handler failed: %v", err)
@@ -170,8 +174,12 @@ func TestVarStepHandlerE2E(t *testing.T) {
                 "value": "$PROTOCOL://$HOST:$PORT/v1/api"
             }`
 
-			ext := &runtime.RawExtension{Raw: []byte(varJSON)}
-			result, err := handler.Handle(ctx, "test-substitution", ext)
+			ext := map[string]any{}
+			err = json.Unmarshal([]byte(varJSON), &ext)
+			if err != nil {
+				t.Fatalf("Failed to unmarshal var JSON: %v", err)
+			}
+			result, err := handler.Handle(ctx, "test-substitution", &ext)
 
 			if err != nil {
 				t.Fatalf("Handler failed: %v", err)
@@ -207,8 +215,12 @@ func TestVarStepHandlerE2E(t *testing.T) {
                 }
             }`
 
-			ext := &runtime.RawExtension{Raw: []byte(varJSON)}
-			result, err := handler.Handle(ctx, "test-configmap", ext)
+			ext := map[string]any{}
+			err = json.Unmarshal([]byte(varJSON), &ext)
+			if err != nil {
+				t.Fatalf("Failed to unmarshal var JSON: %v", err)
+			}
+			result, err := handler.Handle(ctx, "test-configmap", &ext)
 
 			if err != nil {
 				t.Fatalf("Handler failed: %v", err)
@@ -244,8 +256,12 @@ func TestVarStepHandlerE2E(t *testing.T) {
                 }
             }`
 
-			ext := &runtime.RawExtension{Raw: []byte(varJSON)}
-			result, err := handler.Handle(ctx, "test-secret", ext)
+			ext := map[string]any{}
+			err = json.Unmarshal([]byte(varJSON), &ext)
+			if err != nil {
+				t.Fatalf("Failed to unmarshal var JSON: %v", err)
+			}
+			result, err := handler.Handle(ctx, "test-secret", &ext)
 
 			if err != nil {
 				t.Fatalf("Handler failed: %v", err)
@@ -282,8 +298,12 @@ func TestVarStepHandlerE2E(t *testing.T) {
                 }
             }`
 
-			ext := &runtime.RawExtension{Raw: []byte(varJSON)}
-			_, err = handler.Handle(ctx, "test-missing", ext)
+			ext := map[string]any{}
+			err = json.Unmarshal([]byte(varJSON), &ext)
+			if err != nil {
+				t.Fatalf("Failed to unmarshal var JSON: %v", err)
+			}
+			_, err = handler.Handle(ctx, "test-missing", &ext)
 
 			if err == nil {
 				t.Fatal("Expected error for non-existent resource, got nil")
@@ -314,8 +334,12 @@ func TestVarStepHandlerE2E(t *testing.T) {
                 }
             }`
 
-			ext := &runtime.RawExtension{Raw: []byte(varJSON)}
-			result, err := handler.Handle(ctx, "test-json-selector", ext)
+			ext := map[string]any{}
+			err = json.Unmarshal([]byte(varJSON), &ext)
+			if err != nil {
+				t.Fatalf("Failed to unmarshal var JSON: %v", err)
+			}
+			result, err := handler.Handle(ctx, "test-json-selector", &ext)
 
 			if err != nil {
 				t.Fatalf("Handler failed: %v", err)
@@ -351,8 +375,12 @@ func TestVarStepHandlerE2E(t *testing.T) {
                 }
             }`
 
-			ext := &runtime.RawExtension{Raw: []byte(varJSON)}
-			result, err := handler.Handle(ctx, "test-default-ns", ext)
+			ext := map[string]any{}
+			err = json.Unmarshal([]byte(varJSON), &ext)
+			if err != nil {
+				t.Fatalf("Failed to unmarshal var JSON: %v", err)
+			}
+			result, err := handler.Handle(ctx, "test-default-ns", &ext)
 
 			if err != nil {
 				t.Fatalf("Handler failed: %v", err)
