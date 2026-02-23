@@ -8,6 +8,7 @@ import (
 	"github.com/krateoplatformops/krateoctl/internal/cache"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/applier"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/deletor"
+	"github.com/krateoplatformops/krateoctl/internal/expand"
 	"github.com/krateoplatformops/krateoctl/internal/workflows/steps"
 	"github.com/krateoplatformops/krateoctl/internal/workflows/types"
 	"github.com/krateoplatformops/provider-runtime/pkg/logging"
@@ -119,6 +120,11 @@ func (r *objStepHandler) toUnstructured(id string, ext *map[string]any) (*unstru
 	}
 
 	mergeMaps(src, res.BodyFields)
+	if expanded := r.expandValues(src); expanded != nil {
+		if objMap, ok := expanded.(map[string]any); ok {
+			src = objMap
+		}
+	}
 
 	r.logr.Debug(fmt.Sprintf("DBG [object:%s]: %v", id, src))
 
@@ -137,5 +143,25 @@ func mergeMaps(dest, src map[string]any) {
 		// Otherwise, overwrite or set (using your NoCopy logic for speed
 		// or SetNestedField for safety)
 		dest[k] = v
+	}
+}
+
+// expandValues resolves ${VAR} placeholders recursively using the shared cache.
+func (r *objStepHandler) expandValues(val any) any {
+	switch v := val.(type) {
+	case map[string]any:
+		for key, elem := range v {
+			v[key] = r.expandValues(elem)
+		}
+		return v
+	case []any:
+		for i, elem := range v {
+			v[i] = r.expandValues(elem)
+		}
+		return v
+	case string:
+		return expand.Expand(v, "", r.subst)
+	default:
+		return val
 	}
 }

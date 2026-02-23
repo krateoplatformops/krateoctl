@@ -7,6 +7,7 @@ import (
 
 	"github.com/krateoplatformops/krateoctl/internal/cache"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/getter"
+	"github.com/krateoplatformops/krateoctl/internal/expand"
 	helmconfig "github.com/krateoplatformops/plumbing/helm"
 	helm "github.com/krateoplatformops/plumbing/helm/v3"
 
@@ -75,6 +76,11 @@ func (r *chartStepHandler) Handle(ctx context.Context, id string, ext *map[strin
 		return nil, fmt.Errorf("failed to unmarshal chart step input: %w", err)
 	}
 	spec.SetDefaults()
+	if expanded := r.expandValues(spec.Values); expanded != nil {
+		if valuesMap, ok := expanded.(map[string]any); ok {
+			spec.Values = valuesMap
+		}
+	}
 
 	namespace := r.ns
 	if spec.Namespace != "" {
@@ -166,4 +172,24 @@ func (r *chartStepHandler) Handle(ctx context.Context, id string, ext *map[strin
 		id, result.ReleaseName))
 
 	return result, nil
+}
+
+// expandValues walks Helm values and resolves ${VAR} placeholders via the shared cache.
+func (r *chartStepHandler) expandValues(val any) any {
+	switch v := val.(type) {
+	case map[string]any:
+		for key, elem := range v {
+			v[key] = r.expandValues(elem)
+		}
+		return v
+	case []any:
+		for i, elem := range v {
+			v[i] = r.expandValues(elem)
+		}
+		return v
+	case string:
+		return expand.Expand(v, "", r.subst)
+	default:
+		return val
+	}
 }
