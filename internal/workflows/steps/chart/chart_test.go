@@ -5,13 +5,13 @@ package steps
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/e2e-framework/klient/k8s/resources"
 	"sigs.k8s.io/e2e-framework/pkg/env"
@@ -100,8 +100,12 @@ func TestChartStepHandlerE2E(t *testing.T) {
                 ]
             }`
 
-			ext := &runtime.RawExtension{Raw: []byte(chartJSON)}
-			result, err := handler.Handle(ctx, "test-install-chart", ext)
+			ext := map[string]any{}
+			err = json.Unmarshal([]byte(chartJSON), &ext)
+			if err != nil {
+				t.Fatalf("Failed to unmarshal chart JSON: %v", err)
+			}
+			result, err := handler.Handle(ctx, "test-install-chart", &ext)
 
 			// Note: This test might fail in environments without internet access
 			if err != nil {
@@ -156,8 +160,12 @@ func TestChartStepHandlerE2E(t *testing.T) {
                 ]
             }`
 
-			ext := &runtime.RawExtension{Raw: []byte(chartJSON)}
-			result, err := handler.Handle(ctx, "test-install-chart-vars", ext)
+			ext := map[string]any{}
+			err = json.Unmarshal([]byte(chartJSON), &ext)
+			if err != nil {
+				t.Fatalf("Failed to unmarshal chart JSON: %v", err)
+			}
+			result, err := handler.Handle(ctx, "test-install-chart-vars", &ext)
 
 			if err != nil {
 				t.Logf("Chart installation with vars failed (expected in some test environments): %v", err)
@@ -194,8 +202,12 @@ func TestChartStepHandlerE2E(t *testing.T) {
                 ]
             }`
 
-			ext := &runtime.RawExtension{Raw: []byte(chartJSON)}
-			result, err := chartHandler.Handle(ctx, "test-template-chart", ext)
+			ext := map[string]any{}
+			err = json.Unmarshal([]byte(chartJSON), &ext)
+			if err != nil {
+				t.Fatalf("Failed to unmarshal chart JSON: %v", err)
+			}
+			result, err := chartHandler.Handle(ctx, "test-template-chart", &ext)
 
 			if err != nil {
 				t.Logf("Chart templating failed (expected in some test environments): %v", err)
@@ -235,8 +247,12 @@ func TestChartStepHandlerE2E(t *testing.T) {
                 ]
             }`
 
-			ext := &runtime.RawExtension{Raw: []byte(chartJSON)}
-			result, err := handler.Handle(ctx, "test-install-repo-chart", ext)
+			ext := map[string]any{}
+			err = json.Unmarshal([]byte(chartJSON), &ext)
+			if err != nil {
+				t.Fatalf("Failed to unmarshal chart JSON: %v", err)
+			}
+			result, err := handler.Handle(ctx, "test-install-repo-chart", &ext)
 
 			if err != nil {
 				t.Logf("Chart installation from repository failed (expected in some test environments): %v", err)
@@ -277,8 +293,12 @@ func TestChartStepHandlerE2E(t *testing.T) {
                 ]
             }`
 
-			ext := &runtime.RawExtension{Raw: []byte(chartJSON)}
-			result, err := handler.Handle(ctx, "test-upgrade-chart", ext)
+			ext := map[string]any{}
+			err = json.Unmarshal([]byte(chartJSON), &ext)
+			if err != nil {
+				t.Fatalf("Failed to unmarshal chart JSON: %v", err)
+			}
+			result, err := handler.Handle(ctx, "test-upgrade-chart", &ext)
 
 			if err != nil {
 				t.Logf("Chart upgrade failed (expected if chart wasn't installed): %v", err)
@@ -308,8 +328,12 @@ func TestChartStepHandlerE2E(t *testing.T) {
                 "namespace": "chart-test-system"
             }`
 
-			ext := &runtime.RawExtension{Raw: []byte(chartJSON)}
-			result, err := handler.Handle(ctx, "test-uninstall-chart", ext)
+			ext := map[string]any{}
+			err = json.Unmarshal([]byte(chartJSON), &ext)
+			if err != nil {
+				t.Fatalf("Failed to unmarshal chart JSON: %v", err)
+			}
+			result, err := handler.Handle(ctx, "test-uninstall-chart", &ext)
 
 			if err != nil {
 				t.Logf("Chart uninstall failed (expected if chart wasn't installed): %v", err)
@@ -374,8 +398,12 @@ func TestChartStepHandlerE2E(t *testing.T) {
                 ]
             }`
 
-			ext := &runtime.RawExtension{Raw: []byte(chartJSON)}
-			result, err := handler.Handle(ctx, "test-install-chart-creds", ext)
+			ext := map[string]any{}
+			err = json.Unmarshal([]byte(chartJSON), &ext)
+			if err != nil {
+				t.Fatalf("Failed to unmarshal chart JSON: %v", err)
+			}
+			result, err := handler.Handle(ctx, "test-install-chart-creds", &ext)
 
 			if err != nil {
 				t.Logf("Chart installation with credentials failed (expected in some test environments): %v", err)

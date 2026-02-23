@@ -13,7 +13,6 @@ import (
 	"github.com/krateoplatformops/provider-runtime/pkg/logging"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -51,7 +50,7 @@ func (r *objStepHandler) Op(op steps.Op) {
 	r.op = op
 }
 
-func (r *objStepHandler) Handle(ctx context.Context, id string, ext *runtime.RawExtension) (*steps.ObjectResult, error) {
+func (r *objStepHandler) Handle(ctx context.Context, id string, ext *map[string]any) (*steps.ObjectResult, error) {
 	uns, err := r.toUnstructured(id, ext)
 	if err != nil {
 		return nil, err
@@ -92,11 +91,17 @@ func (r *objStepHandler) Handle(ctx context.Context, id string, ext *runtime.Raw
 	return result, err
 }
 
-func (r *objStepHandler) toUnstructured(id string, ext *runtime.RawExtension) (*unstructured.Unstructured, error) {
+func (r *objStepHandler) toUnstructured(id string, ext *map[string]any) (*unstructured.Unstructured, error) {
 	res := types.Object{}
-	err := json.Unmarshal(ext.Raw, &res)
+
+	data, err := json.Marshal(ext)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to marshal chart step input: %w", err)
+	}
+
+	err = json.Unmarshal(data, &res)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal object step input: %w", err)
 	}
 
 	namespace := res.Metadata.Namespace

@@ -2,15 +2,13 @@ package types
 
 import (
 	"encoding/json"
-	"strconv"
 	"time"
 
+	"gopkg.in/yaml.v3"
 	"helm.sh/helm/v3/pkg/release"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	runtime "k8s.io/apimachinery/pkg/runtime"
 
 	rtv1 "github.com/krateoplatformops/provider-runtime/apis/common/v1"
-	"github.com/twmb/murmur3"
 )
 
 type Data struct {
@@ -99,33 +97,54 @@ type ChartObservation struct {
 }
 
 type Object struct {
-	ObjectMeta `json:",inline"`
-	BodyFields map[string]any `json:"-"`
+	ObjectMeta `json:",inline" yaml:",inline"`
+	BodyFields map[string]any `json:"-" yaml:"-"`
+}
+
+// extractBodyFields filters out standard fields to populate BodyFields map
+func (o *Object) extractBodyFields(raw map[string]any) {
+	o.BodyFields = make(map[string]any)
+	for k, v := range raw {
+		// Skip keys that are part of the core ObjectMeta structure
+		if k != "apiVersion" && k != "kind" && k != "metadata" {
+			o.BodyFields[k] = v
+		}
+	}
 }
 
 // UnmarshalJSON captures all fields not in ObjectMeta into BodyFields
 func (o *Object) UnmarshalJSON(data []byte) error {
-	// First unmarshal into a raw map to capture all fields
 	var raw map[string]any
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
 
-	// Unmarshal ObjectMeta fields
 	var om ObjectMeta
 	if err := json.Unmarshal(data, &om); err != nil {
 		return err
 	}
 	o.ObjectMeta = om
 
-	// Capture all fields except apiVersion, kind, and metadata into BodyFields
-	o.BodyFields = make(map[string]any)
-	for k, v := range raw {
-		if k != "apiVersion" && k != "kind" && k != "metadata" {
-			o.BodyFields[k] = v
-		}
+	o.extractBodyFields(raw)
+	return nil
+}
+
+// UnmarshalYAML captures all fields not in ObjectMeta into BodyFields for YAML data
+func (o *Object) UnmarshalYAML(node *yaml.Node) error {
+	// Decode into a raw map to find extra fields
+	var raw map[string]any
+	if err := node.Decode(&raw); err != nil {
+		return err
 	}
 
+	// Decode into the structured ObjectMeta
+	var om ObjectMeta
+	if err := node.Decode(&om); err != nil {
+		return err
+	}
+	o.ObjectMeta = om
+
+	o.extractBodyFields(raw)
 	return nil
 }
 
@@ -138,21 +157,10 @@ const (
 )
 
 type Step struct {
-	ID   string                `json:"id"`
-	Type StepType              `json:"type"`
-	With *runtime.RawExtension `json:"with"`
-	Skip bool                  `json:"skip,omitempty"`
-}
-
-func (s *Step) Digest() string {
-	if s.With == nil || len(s.With.Raw) == 0 {
-		return ""
-	}
-
-	hasher := murmur3.New64()
-	hasher.Write(s.With.Raw)
-
-	return strconv.FormatUint(hasher.Sum64(), 16)
+	ID   string          `json:"id"`
+	Type StepType        `json:"type"`
+	With *map[string]any `json:"with"`
+	Skip bool            `json:"skip,omitempty"`
 }
 
 type Workflow struct {

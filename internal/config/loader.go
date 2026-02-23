@@ -30,8 +30,8 @@ func NewLoader(opts LoadOptions) *Loader {
 }
 
 // Load reads and parses configuration from krateo.yaml and optional overrides.
-// Returns a map[string]interface{} representing the merged configuration.
-func (l *Loader) Load() (map[string]interface{}, error) {
+// Returns a map[string]any representing the merged configuration.
+func (l *Loader) Load() (map[string]any, error) {
 	// Load main config file
 	config, err := l.loadFile(l.opts.ConfigPath)
 	if err != nil {
@@ -46,7 +46,7 @@ func (l *Loader) Load() (map[string]interface{}, error) {
 	// Load base overrides file if it exists. It's optional, but its directory
 	// is also used as the anchor for profile-specific override files
 	// (krateo-overrides.<profile>.yaml).
-	baseOverrides := make(map[string]interface{})
+	baseOverrides := make(map[string]any)
 	if fi, err := os.Stat(l.opts.UserOverridesPath); err == nil && !fi.IsDir() {
 		baseOverrides, err = l.loadFile(l.opts.UserOverridesPath)
 		if err != nil {
@@ -71,7 +71,7 @@ func (l *Loader) Load() (map[string]interface{}, error) {
 	// before finally applying the base krateo-overrides.yaml. This ensures
 	// that krateo-overrides.yaml is applied *after* all profiles, so that
 	// top-level overrides win over any profile.
-	profileOverrides := make(map[string]interface{})
+	profileOverrides := make(map[string]any)
 
 	if len(profiles) > 0 {
 		dir := filepath.Dir(l.opts.UserOverridesPath)
@@ -97,7 +97,7 @@ func (l *Loader) Load() (map[string]interface{}, error) {
 
 		// 2) In-file profiles defined inside base overrides (if any)
 		if profilesRaw, ok := baseOverrides["profiles"]; ok {
-			profMap, ok := profilesRaw.(map[string]interface{})
+			profMap, ok := profilesRaw.(map[string]any)
 			if !ok {
 				return nil, fmt.Errorf("profiles must be a mapping, got %T", profilesRaw)
 			}
@@ -108,7 +108,7 @@ func (l *Loader) Load() (map[string]interface{}, error) {
 					return nil, fmt.Errorf("profile %q not found in overrides", p)
 				}
 
-				entryMap, ok := entryRaw.(map[string]interface{})
+				entryMap, ok := entryRaw.(map[string]any)
 				if !ok {
 					return nil, fmt.Errorf("profile %q must be a mapping, got %T", p, entryRaw)
 				}
@@ -137,9 +137,9 @@ func (l *Loader) Load() (map[string]interface{}, error) {
 }
 
 // loadFile reads and parses a YAML file into a map.
-func (l *Loader) loadFile(path string) (map[string]interface{}, error) {
+func (l *Loader) loadFile(path string) (map[string]any, error) {
 	if path == "" {
-		return make(map[string]interface{}), nil
+		return make(map[string]any), nil
 	}
 
 	// Resolve relative paths
@@ -156,7 +156,7 @@ func (l *Loader) loadFile(path string) (map[string]interface{}, error) {
 		return nil, fmt.Errorf("failed to read file %s: %w", path, err)
 	}
 
-	var data map[string]interface{}
+	var data map[string]any
 	if err := yaml.Unmarshal(content, &data); err != nil {
 		return nil, fmt.Errorf("failed to parse YAML from %s: %w", path, err)
 	}
@@ -166,12 +166,12 @@ func (l *Loader) loadFile(path string) (map[string]interface{}, error) {
 
 // mergeConfigs recursively merges override config into base config.
 // Arrays are replaced (atomic strategy), objects are merged recursively.
-func mergeConfigs(base, override map[string]interface{}) map[string]interface{} {
+func mergeConfigs(base, override map[string]any) map[string]any {
 	for key, val := range override {
 		if baseVal, exists := base[key]; exists {
 			// Both are maps - merge recursively
-			if baseMap, ok := baseVal.(map[string]interface{}); ok {
-				if overrideMap, ok := val.(map[string]interface{}); ok {
+			if baseMap, ok := baseVal.(map[string]any); ok {
+				if overrideMap, ok := val.(map[string]any); ok {
 					base[key] = mergeConfigs(baseMap, overrideMap)
 					continue
 				}

@@ -3,13 +3,13 @@ package plan
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 
 	"github.com/krateoplatformops/krateoctl/internal/cmd/install/shared"
 	"github.com/krateoplatformops/krateoctl/internal/config"
+	"github.com/krateoplatformops/krateoctl/internal/diff"
 	"github.com/krateoplatformops/krateoctl/internal/subcommands"
 	"gopkg.in/yaml.v3"
 )
@@ -84,29 +84,47 @@ func (c *planCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{
 	enc := yaml.NewEncoder(os.Stdout)
 	defer enc.Close()
 
-	for _, step := range steps {
-		doc := map[string]any{
-			"id":   step.ID,
-			"type": step.Type,
-		}
-
-		// Include skip flag when the step is disabled for this profile/component.
-		if step.Skip {
-			doc["skip"] = true
-		}
-
-		if step.With != nil && len(step.With.Raw) > 0 {
-			var with any
-			if err := json.Unmarshal(step.With.Raw, &with); err == nil {
-				doc["with"] = with
-			}
-		}
-
-		if err := enc.Encode(doc); err != nil {
-			fmt.Fprintf(os.Stderr, "✗ Failed to encode plan document: %v\n", err)
-			return subcommands.ExitFailure
-		}
+	boriginalSteps, err := yaml.Marshal(result.OriginalSteps)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "✗ Failed to marshal original steps: %v\n", err)
+		return subcommands.ExitFailure
 	}
+
+	bSteps, err := yaml.Marshal(steps)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "✗ Failed to marshal steps: %v\n", err)
+		return subcommands.ExitFailure
+	}
+
+	di := diff.Diff("original", boriginalSteps, "computed", bSteps)
+
+	if len(di) > 0 {
+		fmt.Printf("⚠️  Plan differs from original steps:\n%s\n", diff.Colorize(di))
+	}
+
+	// for _, step := range steps {
+	// 	doc := map[string]any{
+	// 		"id":   step.ID,
+	// 		"type": step.Type,
+	// 	}
+
+	// 	// Include skip flag when the step is disabled for this profile/component.
+	// 	if step.Skip {
+	// 		doc["skip"] = true
+	// 	}
+
+	// 	if step.With != nil && len(step.With.Raw) > 0 {
+	// 		var with any
+	// 		if err := json.Unmarshal(step.With.Raw, &with); err == nil {
+	// 			doc["with"] = with
+	// 		}
+	// 	}
+
+	// 	if err := enc.Encode(doc); err != nil {
+	// 		fmt.Fprintf(os.Stderr, "✗ Failed to encode plan document: %v\n", err)
+	// 		return subcommands.ExitFailure
+	// 	}
+	// }
 
 	return subcommands.ExitSuccess
 }

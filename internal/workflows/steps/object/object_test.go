@@ -5,13 +5,13 @@ package steps
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"testing"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/e2e-framework/klient/k8s/resources"
 	"sigs.k8s.io/e2e-framework/pkg/env"
@@ -100,8 +100,12 @@ func TestObjectStepHandlerE2E(t *testing.T) {
                 }
             }`
 
-			ext := &runtime.RawExtension{Raw: []byte(objJSON)}
-			result, err := handler.Handle(ctx, "test-create-cm", ext)
+			ext := map[string]any{}
+			err = json.Unmarshal([]byte(objJSON), &ext)
+			if err != nil {
+				t.Fatalf("Failed to unmarshal object JSON: %v", err)
+			}
+			result, err := handler.Handle(ctx, "test-create-cm", &ext)
 
 			if err != nil {
 				t.Fatalf("Handler failed: %v", err)
@@ -164,8 +168,12 @@ func TestObjectStepHandlerE2E(t *testing.T) {
                 }
             }`
 
-			ext := &runtime.RawExtension{Raw: []byte(objJSON)}
-			result, err := handler.Handle(ctx, "test-create-secret", ext)
+			ext := map[string]any{}
+			err = json.Unmarshal([]byte(objJSON), &ext)
+			if err != nil {
+				t.Fatalf("Failed to unmarshal object JSON: %v", err)
+			}
+			result, err := handler.Handle(ctx, "test-create-secret", &ext)
 
 			if err != nil {
 				t.Fatalf("Handler failed: %v", err)
@@ -219,8 +227,12 @@ func TestObjectStepHandlerE2E(t *testing.T) {
                 }
             }`
 
-			ext := &runtime.RawExtension{Raw: []byte(objJSON)}
-			result, err := handler.Handle(ctx, "test-update-cm", ext)
+			ext := map[string]any{}
+			err = json.Unmarshal([]byte(objJSON), &ext)
+			if err != nil {
+				t.Fatalf("Failed to unmarshal object JSON: %v", err)
+			}
+			result, err := handler.Handle(ctx, "test-update-cm", &ext)
 
 			if err != nil {
 				t.Fatalf("Handler failed: %v", err)
@@ -273,8 +285,12 @@ func TestObjectStepHandlerE2E(t *testing.T) {
                 }
             }`
 
-			ext := &runtime.RawExtension{Raw: []byte(objJSON)}
-			result, err := handler.Handle(ctx, "test-delete-cm", ext)
+			ext := map[string]any{}
+			err = json.Unmarshal([]byte(objJSON), &ext)
+			if err != nil {
+				t.Fatalf("Failed to unmarshal object JSON: %v", err)
+			}
+			result, err := handler.Handle(ctx, "test-delete-cm", &ext)
 
 			if err != nil {
 				t.Fatalf("Handler failed: %v", err)
@@ -321,8 +337,12 @@ func TestObjectStepHandlerE2E(t *testing.T) {
                 }
             }`
 
-			ext := &runtime.RawExtension{Raw: []byte(objJSON)}
-			result, err := handler.Handle(ctx, "test-default-ns-cm", ext)
+			ext := map[string]any{}
+			err = json.Unmarshal([]byte(objJSON), &ext)
+			if err != nil {
+				t.Fatalf("Failed to unmarshal object JSON: %v", err)
+			}
+			result, err := handler.Handle(ctx, "test-default-ns-cm", &ext)
 
 			if err != nil {
 				t.Fatalf("Handler failed: %v", err)
@@ -397,8 +417,12 @@ func TestObjectStepHandlerE2E(t *testing.T) {
                 }
             }`
 
-			ext := &runtime.RawExtension{Raw: []byte(objJSON)}
-			result, err := handler.Handle(ctx, "test-deployment", ext)
+			ext := map[string]any{}
+			err = json.Unmarshal([]byte(objJSON), &ext)
+			if err != nil {
+				t.Fatalf("Failed to unmarshal object JSON: %v", err)
+			}
+			result, err := handler.Handle(ctx, "test-deployment", &ext)
 
 			if err != nil {
 				t.Fatalf("Handler failed: %v", err)

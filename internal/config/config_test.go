@@ -1,26 +1,23 @@
 package config
 
 import (
-	"encoding/json"
 	"testing"
-
-	"github.com/krateoplatformops/krateoctl/internal/workflows/types"
 )
 
 func TestGetActiveStepsAppliesStepWithOverrides(t *testing.T) {
-	cfg := mustNewConfig(t, map[string]interface{}{
-		"components": map[string]interface{}{
-			"eventsse": map[string]interface{}{
+	cfg := mustNewConfig(t, map[string]any{
+		"components": map[string]any{
+			"eventsse": map[string]any{
 				"steps": []interface{}{"install-eventsse"},
-				"stepConfig": map[string]interface{}{
-					"install-eventsse": map[string]interface{}{
-						"with": map[string]interface{}{
+				"stepConfig": map[string]any{
+					"install-eventsse": map[string]any{
+						"with": map[string]any{
 							"releaseName": "eventsse-profile",
 							"repo":        "custom-repo",
 							"version":     "9.9.9",
 						},
-						"helmValues": map[string]interface{}{
-							"env": map[string]interface{}{
+						"helmValues": map[string]any{
+							"env": map[string]any{
 								"DEBUG": "true",
 							},
 						},
@@ -29,15 +26,15 @@ func TestGetActiveStepsAppliesStepWithOverrides(t *testing.T) {
 			},
 		},
 		"steps": []interface{}{
-			map[string]interface{}{
+			map[string]any{
 				"id":   "install-eventsse",
 				"type": "chart",
-				"with": map[string]interface{}{
+				"with": map[string]any{
 					"releaseName": "eventsse",
 					"repo":        "base-repo",
 					"version":     "1.0.0",
-					"values": map[string]interface{}{
-						"env": map[string]interface{}{
+					"values": map[string]any{
+						"env": map[string]any{
 							"DEBUG": "false",
 						},
 					},
@@ -55,7 +52,7 @@ func TestGetActiveStepsAppliesStepWithOverrides(t *testing.T) {
 		t.Fatalf("expected 1 step, got %d", len(steps))
 	}
 
-	with := unmarshalWith(t, steps[0])
+	with := *steps[0].With
 
 	if got := with["releaseName"]; got != "eventsse-profile" {
 		t.Fatalf("expected releaseName override, got %v", got)
@@ -67,31 +64,31 @@ func TestGetActiveStepsAppliesStepWithOverrides(t *testing.T) {
 		t.Fatalf("expected version override, got %v", got)
 	}
 
-	values := with["values"].(map[string]interface{})
-	env := values["env"].(map[string]interface{})
+	values := with["values"].(map[string]any)
+	env := values["env"].(map[string]any)
 	if got := env["DEBUG"]; got != "true" {
 		t.Fatalf("expected env override, got %v", got)
 	}
 }
 
 func TestGetActiveStepsLegacyHelmDefaults(t *testing.T) {
-	cfg := mustNewConfig(t, map[string]interface{}{
-		"components": map[string]interface{}{
-			"frontend": map[string]interface{}{
+	cfg := mustNewConfig(t, map[string]any{
+		"components": map[string]any{
+			"frontend": map[string]any{
 				"steps": []interface{}{"install-frontend"},
-				"helmDefaults": map[string]interface{}{
-					"service": map[string]interface{}{
+				"helmDefaults": map[string]any{
+					"service": map[string]any{
 						"type": "ClusterIP",
 					},
 				},
-				"stepConfig": map[string]interface{}{
-					"install-frontend": map[string]interface{}{
-						"helmValues": map[string]interface{}{
-							"env": map[string]interface{}{
+				"stepConfig": map[string]any{
+					"install-frontend": map[string]any{
+						"helmValues": map[string]any{
+							"env": map[string]any{
 								"FOO": "bar",
 							},
 						},
-						"with": map[string]interface{}{
+						"with": map[string]any{
 							"releaseName": "frontend-profile",
 						},
 					},
@@ -99,16 +96,16 @@ func TestGetActiveStepsLegacyHelmDefaults(t *testing.T) {
 			},
 		},
 		"steps": []interface{}{
-			map[string]interface{}{
+			map[string]any{
 				"id":   "install-frontend",
 				"type": "chart",
-				"with": map[string]interface{}{
+				"with": map[string]any{
 					"releaseName": "frontend",
-					"values": map[string]interface{}{
-						"service": map[string]interface{}{
+					"values": map[string]any{
+						"service": map[string]any{
 							"type": "NodePort",
 						},
-						"env": map[string]interface{}{
+						"env": map[string]any{
 							"FOO": "base",
 						},
 					},
@@ -122,41 +119,41 @@ func TestGetActiveStepsLegacyHelmDefaults(t *testing.T) {
 		t.Fatalf("GetActiveSteps() error = %v", err)
 	}
 
-	with := unmarshalWith(t, steps[0])
+	with := *steps[0].With
 	if got := with["releaseName"]; got != "frontend-profile" {
 		t.Fatalf("expected releaseName override, got %v", got)
 	}
 
-	values := with["values"].(map[string]interface{})
-	service := values["service"].(map[string]interface{})
+	values := with["values"].(map[string]any)
+	service := values["service"].(map[string]any)
 	if got := service["type"]; got != "ClusterIP" {
 		t.Fatalf("expected service.type override, got %v", got)
 	}
-	env := values["env"].(map[string]interface{})
+	env := values["env"].(map[string]any)
 	if got := env["FOO"]; got != "bar" {
 		t.Fatalf("expected env override, got %v", got)
 	}
 }
 
 func TestGetActiveStepsComponentWithOverrides(t *testing.T) {
-	cfg := mustNewConfig(t, map[string]interface{}{
-		"components": map[string]interface{}{
-			"eventrouter": map[string]interface{}{
+	cfg := mustNewConfig(t, map[string]any{
+		"components": map[string]any{
+			"eventrouter": map[string]any{
 				"steps": []interface{}{"install-eventrouter"},
-				"helmDefaults": map[string]interface{}{
-					"with": map[string]interface{}{
+				"helmDefaults": map[string]any{
+					"with": map[string]any{
 						"namespace": "custom-ns",
 					},
 				},
 			},
 		},
 		"steps": []interface{}{
-			map[string]interface{}{
+			map[string]any{
 				"id":   "install-eventrouter",
 				"type": "chart",
-				"with": map[string]interface{}{
+				"with": map[string]any{
 					"namespace": "base-ns",
-					"values":    map[string]interface{}{},
+					"values":    map[string]any{},
 				},
 			},
 		},
@@ -167,21 +164,13 @@ func TestGetActiveStepsComponentWithOverrides(t *testing.T) {
 		t.Fatalf("GetActiveSteps() error = %v", err)
 	}
 
-	with := unmarshalWith(t, steps[0])
+	with := *steps[0].With
 	if got := with["namespace"]; got != "custom-ns" {
 		t.Fatalf("expected namespace override, got %v", got)
 	}
 }
 
-func unmarshalWith(t *testing.T, step *types.Step) map[string]interface{} {
-	var with map[string]interface{}
-	if err := json.Unmarshal(step.With.Raw, &with); err != nil {
-		t.Fatalf("failed to unmarshal chart spec: %v", err)
-	}
-	return with
-}
-
-func mustNewConfig(t *testing.T, data map[string]interface{}) *Config {
+func mustNewConfig(t *testing.T, data map[string]any) *Config {
 	t.Helper()
 	cfg, err := NewConfig(data)
 	if err != nil {
