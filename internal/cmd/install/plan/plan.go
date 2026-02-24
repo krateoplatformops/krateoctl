@@ -11,6 +11,7 @@ import (
 	"github.com/krateoplatformops/krateoctl/internal/config"
 	"github.com/krateoplatformops/krateoctl/internal/diff"
 	"github.com/krateoplatformops/krateoctl/internal/subcommands"
+	"github.com/krateoplatformops/krateoctl/internal/ui"
 	"gopkg.in/yaml.v3"
 )
 
@@ -63,20 +64,27 @@ func (c *planCmd) SetFlags(f *flag.FlagSet) {
 }
 
 func (c *planCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+	debugMode := os.Getenv("KRATEO_DEBUG") != "" || c.profile == "debug"
+	logLevel := ui.LevelInfo
+	if debugMode {
+		logLevel = ui.LevelDebug
+	}
+	l := ui.NewLogger(os.Stderr, logLevel)
+
 	result, err := shared.LoadConfigAndSteps(config.LoadOptions{
 		ConfigPath:        c.configFile,
 		UserOverridesPath: "krateo-overrides.yaml",
 		Profile:           c.profile,
 	})
 	if err != nil {
-		fmt.Printf("✗ %v\n", err)
+		l.Error("Failed to load configuration: %v", err)
 		return subcommands.ExitFailure
 	}
 
 	steps := result.Steps
 
 	if len(steps) == 0 {
-		fmt.Println("ℹ No steps configured")
+		l.Info("ℹ No steps configured")
 		return subcommands.ExitSuccess
 	}
 
@@ -86,20 +94,20 @@ func (c *planCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{
 
 	boriginalSteps, err := yaml.Marshal(result.OriginalSteps)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "✗ Failed to marshal original steps: %v\n", err)
+		l.Error("✗ Failed to marshal original steps: %v", err)
 		return subcommands.ExitFailure
 	}
 
 	bSteps, err := yaml.Marshal(steps)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "✗ Failed to marshal steps: %v\n", err)
+		l.Error("✗ Failed to marshal steps: %v", err)
 		return subcommands.ExitFailure
 	}
 
 	di := diff.Diff("original", boriginalSteps, "computed", bSteps)
 
 	if len(di) > 0 {
-		fmt.Printf("⚠️  Plan differs from original steps:\n%s\n", diff.Colorize(di))
+		l.Warn("⚠️  Plan differs from original steps:\n%s", diff.Colorize(di))
 	}
 
 	return subcommands.ExitSuccess
