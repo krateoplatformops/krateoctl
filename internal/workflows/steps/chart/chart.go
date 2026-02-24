@@ -13,23 +13,22 @@ import (
 
 	"github.com/krateoplatformops/krateoctl/internal/workflows/steps"
 	"github.com/krateoplatformops/krateoctl/internal/workflows/types"
-	"github.com/krateoplatformops/provider-runtime/pkg/logging"
 	"k8s.io/client-go/rest"
 )
 
 type ChartHandlerOptions struct {
-	Dyn *getter.Getter
-	Env *cache.Cache[string, string]
-	Log logging.Logger
-	Cfg *rest.Config
+	Dyn    *getter.Getter
+	Env    *cache.Cache[string, string]
+	Cfg    *rest.Config
+	Logger func(string, ...any)
 }
 
 func ChartHandler(opts ChartHandlerOptions) steps.Handler[*steps.ChartResult] {
 	hdl := &chartStepHandler{
-		env:  opts.Env,
-		logr: opts.Log,
-		dyn:  opts.Dyn,
-		cfg:  opts.Cfg,
+		env:    opts.Env,
+		dyn:    opts.Dyn,
+		cfg:    opts.Cfg,
+		logger: opts.Logger,
 	}
 	hdl.subst = func(k string) string {
 		if v, ok := hdl.env.Get(k); ok {
@@ -50,7 +49,7 @@ type chartStepHandler struct {
 	op     steps.Op
 	subst  func(k string) string
 	render bool
-	logr   logging.Logger
+	logger func(string, ...any)
 	dyn    *getter.Getter
 	cfg    *rest.Config
 }
@@ -111,8 +110,6 @@ func (r *chartStepHandler) Handle(ctx context.Context, id string, ext *map[strin
 			releaseName = spec.ReleaseName
 		}
 
-		fmt.Println("Release name:", releaseName)
-
 		release, err := cli.GetRelease(ctx, releaseName, &helmconfig.GetConfig{})
 		if err != nil {
 			return nil, fmt.Errorf("failed to get release: %w", err)
@@ -149,7 +146,7 @@ func (r *chartStepHandler) Handle(ctx context.Context, id string, ext *map[strin
 			}
 		}
 
-		r.logr.Debug(fmt.Sprintf(
+		r.logger(fmt.Sprintf(
 			"[chart:%s]: %s operation completed for release %s",
 			id, result.Operation, result.ReleaseName))
 
@@ -167,7 +164,7 @@ func (r *chartStepHandler) Handle(ctx context.Context, id string, ext *map[strin
 
 	result.Status = "uninstalled"
 
-	r.logr.Debug(fmt.Sprintf(
+	r.logger(fmt.Sprintf(
 		"[chart:%s]: uninstall operation completed for release %s",
 		id, result.ReleaseName))
 

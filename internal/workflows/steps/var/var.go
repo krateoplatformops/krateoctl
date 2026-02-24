@@ -11,15 +11,16 @@ import (
 	"github.com/krateoplatformops/krateoctl/internal/expand"
 	"github.com/krateoplatformops/krateoctl/internal/workflows/steps"
 	"github.com/krateoplatformops/krateoctl/internal/workflows/types"
-	"github.com/krateoplatformops/provider-runtime/pkg/logging"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 var _ steps.Handler[*steps.VarResult] = (*varStepHandler)(nil)
 
-func VarHandler(dyn *getter.Getter, env *cache.Cache[string, string], logr logging.Logger) steps.Handler[*steps.VarResult] {
+func VarHandler(dyn *getter.Getter, env *cache.Cache[string, string], logger func(string, ...any)) steps.Handler[*steps.VarResult] {
 	return &varStepHandler{
-		dyn: dyn, env: env,
+		dyn:    dyn,
+		env:    env,
+		logger: logger,
 		subst: func(k string) string {
 			if v, ok := env.Get(k); ok {
 				return v
@@ -27,17 +28,16 @@ func VarHandler(dyn *getter.Getter, env *cache.Cache[string, string], logr loggi
 
 			return "$" + k
 		},
-		logr: logr,
 	}
 }
 
 type varStepHandler struct {
-	dyn   *getter.Getter
-	env   *cache.Cache[string, string]
-	ns    string
-	subst func(k string) string
-	op    steps.Op
-	logr  logging.Logger
+	dyn    *getter.Getter
+	env    *cache.Cache[string, string]
+	logger func(string, ...any)
+	ns     string
+	subst  func(k string) string
+	op     steps.Op
 }
 
 func (r *varStepHandler) Op(op steps.Op) {
@@ -69,16 +69,16 @@ func (r *varStepHandler) Handle(ctx context.Context, id string, ext *map[string]
 		r.env.Set(res.Name, val)
 		result.Value = val
 
-		r.logr.Debug(fmt.Sprintf(
-			"DBG: step (id: %s), type: var (name: %s, value: %s)",
+		r.logger(fmt.Sprintf(
+			" step (id: %s), type: var (name: %s, value: %s)",
 			id, res.Name, val))
 	} else {
-		r.logr.Debug(fmt.Sprintf(
-			"DBG: step (id: %s), type: var (name: %s) with.Value is empty", id, res.Name))
+		r.logger(fmt.Sprintf(
+			" step (id: %s), type: var (name: %s) with.Value is empty", id, res.Name))
 	}
 
 	if res.ValueFrom == nil {
-		r.logr.Debug(fmt.Sprintf("DBG: step (id: %s), type: var (name: %s), with.valueFrom is empty", id, res.Name))
+		r.logger(fmt.Sprintf(" step (id: %s), type: var (name: %s), with.valueFrom is empty", id, res.Name))
 		return result, nil
 	}
 
@@ -108,10 +108,6 @@ func (r *varStepHandler) Handle(ctx context.Context, id string, ext *map[string]
 		valStr := steps.Strval(val)
 		r.env.Set(res.Name, valStr)
 		result.Value = valStr
-
-		r.logr.Debug(fmt.Sprintf(
-			"DBG [var:%s]: var (name: %s, value: %s)",
-			id, res.Name, valStr))
 	}
 
 	return result, err

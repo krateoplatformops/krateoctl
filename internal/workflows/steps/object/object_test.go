@@ -6,13 +6,13 @@ package steps
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"testing"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/e2e-framework/klient/k8s/resources"
 	"sigs.k8s.io/e2e-framework/pkg/env"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
@@ -24,7 +24,6 @@ import (
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/applier"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/deletor"
 	"github.com/krateoplatformops/krateoctl/internal/workflows/steps"
-	"github.com/krateoplatformops/provider-runtime/pkg/logging"
 )
 
 var (
@@ -457,9 +456,9 @@ func createObjectHandler(cfg *envconf.Config) (*objStepHandler, error) {
 	}
 
 	env := cache.New[string, string]()
-	zl := zap.New(zap.UseDevMode(true))
-	log := logging.NewLogrLogger(zl.WithName("object-test"))
 
-	handler := ObjectHandler(applier, deletor, env, log)
+	handler := ObjectHandler(applier, deletor, env, func(msg string, args ...any) {
+		fmt.Printf("ObjectHandler: %s\n", fmt.Sprintf(msg, args...))
+	})
 	return handler.(*objStepHandler), nil
 }

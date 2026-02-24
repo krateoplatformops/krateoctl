@@ -12,7 +12,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/e2e-framework/klient/k8s/resources"
 	"sigs.k8s.io/e2e-framework/pkg/env"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
@@ -23,7 +22,6 @@ import (
 	"github.com/krateoplatformops/krateoctl/internal/cache"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/getter"
 	"github.com/krateoplatformops/krateoctl/internal/workflows/steps"
-	"github.com/krateoplatformops/provider-runtime/pkg/logging"
 )
 
 var (
@@ -407,18 +405,13 @@ func createVarHandler(cfg *envconf.Config) (*varStepHandler, error) {
 	}
 
 	env := cache.New[string, string]()
-	zl := zap.New(zap.UseDevMode(true))
-	log := logging.NewLogrLogger(zl.WithName("var-test"))
-
-	handler := VarHandler(getter, env, log)
+	handler := VarHandler(getter, env, func(string, ...any) {})
 	return handler.(*varStepHandler), nil
 }
 
 func createVarHandlerWithEnv(cfg *envconf.Config, env *cache.Cache[string, string]) *varStepHandler {
 	getter, _ := getter.NewGetter(cfg.Client().RESTConfig())
-	zl := zap.New(zap.UseDevMode(true))
-	log := logging.NewLogrLogger(zl.WithName("var-test"))
 
-	handler := VarHandler(getter, env, log)
+	handler := VarHandler(getter, env, func(string, ...any) {})
 	return handler.(*varStepHandler)
 }

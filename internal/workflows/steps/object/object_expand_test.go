@@ -4,14 +4,13 @@ import (
 	"testing"
 
 	"github.com/krateoplatformops/krateoctl/internal/cache"
-	"github.com/krateoplatformops/provider-runtime/pkg/logging"
 )
 
 func TestObjectHandlerExpandValues(t *testing.T) {
 	env := cache.New[string, string]()
 	env.Set("CONFIG_VALUE", "expanded")
 
-	handler := &objStepHandler{env: env, ns: "default", logr: logging.NewNopLogger()}
+	handler := &objStepHandler{env: env, ns: "default"}
 	handler.subst = func(k string) string {
 		if v, ok := handler.env.Get(k); ok {
 			return v

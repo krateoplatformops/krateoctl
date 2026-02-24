@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"os"
 
 	"github.com/krateoplatformops/krateoctl/internal/cmd/install/shared"
 	"github.com/krateoplatformops/krateoctl/internal/config"
@@ -12,16 +13,21 @@ import (
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/deletor"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/getter"
 	"github.com/krateoplatformops/krateoctl/internal/subcommands"
+	"github.com/krateoplatformops/krateoctl/internal/ui"
 	"github.com/krateoplatformops/krateoctl/internal/util/kube"
 	"github.com/krateoplatformops/krateoctl/internal/workflows"
 	"github.com/krateoplatformops/krateoctl/internal/workflows/types"
 	"k8s.io/client-go/rest"
+)
 
-	"github.com/krateoplatformops/provider-runtime/pkg/logging"
+const (
+	defaultConfigPath    = "krateo.yaml"
+	defaultOverridesPath = "krateo-overrides.yaml"
+	defaultNamespace     = "krateo-system"
 )
 
 type workflowRunner interface {
-	Run(context.Context, *types.Workflow, func(*types.Step) bool) []workflows.StepResult[any]
+	Run(context.Context, *types.Workflow, func(*types.Step) bool, workflows.StepNotifier) []workflows.StepResult[any]
 }
 
 type restConfigProvider func() (*rest.Config, error)
@@ -51,25 +57,20 @@ func (c *applyCmd) ensureDeps() {
 	if c.restConfigFn == nil {
 		c.restConfigFn = kube.RestConfig
 	}
-
 	if c.getterFactory == nil {
 		c.getterFactory = getter.NewGetter
 	}
-
 	if c.applierFactory == nil {
 		c.applierFactory = applier.NewApplier
 	}
-
 	if c.deletorFactory == nil {
 		c.deletorFactory = deletor.NewDeletor
 	}
-
 	if c.workflowFactory == nil {
 		c.workflowFactory = func(opts workflows.Opts) (workflowRunner, error) {
 			return workflows.New(opts)
 		}
 	}
-
 	if c.errEvaluator == nil {
 		c.errEvaluator = func(results []workflows.StepResult[any]) error {
 			return workflows.Err(results)
@@ -82,130 +83,145 @@ func (c *applyCmd) Synopsis() string { return "apply configuration changes to cl
 
 func (c *applyCmd) Usage() string {
 	wri := bytes.Buffer{}
-	fmt.Fprintf(&wri, "%s. Load the installation config, compute the workflow steps and execute them against a Kubernetes cluster.\n\n", c.Synopsis())
-
-	fmt.Fprint(&wri, "USAGE:\n\n")
-	fmt.Fprint(&wri, "  krateoctl install apply [FLAGS]\n\n")
-
-	fmt.Fprint(&wri, "FLAGS:\n\n")
-	fmt.Fprint(&wri, "  -config string\n")
-	fmt.Fprint(&wri, "        path to installation configuration file (default \"krateo.yaml\")\n")
-	fmt.Fprint(&wri, "  -namespace string\n")
-	fmt.Fprint(&wri, "        Kubernetes namespace where resources will be created (default \"krateo-system\")\n")
-	fmt.Fprint(&wri, "  -profile string\n")
-	fmt.Fprint(&wri, "        optional profile name defined in krateo-overrides.yaml (e.g. dev, prod)\n\n")
-
-	fmt.Fprint(&wri, "CONVENTIONS:\n\n")
-	fmt.Fprint(&wri, "  - Main config is read from krateo.yaml (overridable with -config).\n")
-	fmt.Fprint(&wri, "  - Overrides are loaded from krateo-overrides.yaml and, when -profile is set, from\n")
-	fmt.Fprint(&wri, "    profile-specific files like krateo-overrides.<profile>.yaml.\n")
-	fmt.Fprint(&wri, "  - Components and steps are resolved from the active profile; steps marked with\n")
-	fmt.Fprint(&wri, "    'skip: true' in the plan are not executed.\n")
-	fmt.Fprint(&wri, "  - Kubernetes connectivity is taken from your current kubeconfig (KUBECONFIG or\n")
-	fmt.Fprint(&wri, "    default kubeconfig location).\n\n")
-
-	fmt.Fprint(&wri, "EXAMPLES:\n\n")
-	fmt.Fprint(&wri, "  # Apply the default configuration to the 'krateo-system' namespace\n")
-	fmt.Fprint(&wri, "  krateoctl install apply\n\n")
-	fmt.Fprint(&wri, "  # Apply the 'dev' profile configuration to a custom namespace\n")
-	fmt.Fprint(&wri, "  krateoctl install apply -profile dev -namespace my-namespace\n\n")
-
+	fmt.Fprintf(&wri, "%s. Load the installation config and execute the workflow.\n\n", c.Synopsis())
+	fmt.Fprint(&wri, "USAGE:\n  krateoctl install apply [FLAGS]\n\n")
+	fmt.Fprint(&wri, "FLAGS:\n")
+	fmt.Fprintf(&wri, "  -config string      path to config (default \"%s\")\n", defaultConfigPath)
+	fmt.Fprintf(&wri, "  -namespace string   target namespace (default \"%s\")\n", defaultNamespace)
+	fmt.Fprint(&wri, "  -profile string     optional override profile\n")
 	return wri.String()
 }
 
 func (c *applyCmd) SetFlags(f *flag.FlagSet) {
-	f.StringVar(&c.configFile, "config", "krateo.yaml", "path to configuration file")
-	f.StringVar(&c.namespace, "namespace", "krateo-system", "kubernetes namespace for deployment")
-	f.StringVar(&c.profile, "profile", "", "optional profile name defined in krateo-overrides.yaml")
+	f.StringVar(&c.configFile, "config", defaultConfigPath, "path to configuration file")
+	f.StringVar(&c.namespace, "namespace", defaultNamespace, "kubernetes namespace for deployment")
+	f.StringVar(&c.profile, "profile", "", "optional profile name")
 }
 
 func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
 	c.ensureDeps()
 
+	// 1. Initialize UI and Logging
+	debugMode := os.Getenv("KRATEO_DEBUG") != "" || c.profile == "debug"
+	logLevel := ui.LevelInfo
+	if debugMode {
+		logLevel = ui.LevelDebug
+	}
+
+	spin := ui.NewSpinner(os.Stdout)
+	l := ui.NewLogger(spin, logLevel)
+	defer spin.Stop("")
+
+	// 2. Load Configuration
 	result, err := shared.LoadConfigAndSteps(config.LoadOptions{
 		ConfigPath:        c.configFile,
-		UserOverridesPath: "krateo-overrides.yaml",
+		UserOverridesPath: defaultOverridesPath,
 		Profile:           c.profile,
 	})
 	if err != nil {
-		fmt.Printf("✗ %v\n", err)
+		l.Error("Failed to load configuration: %v", err)
 		return subcommands.ExitFailure
 	}
 
-	steps := result.Steps
-
-	if len(steps) == 0 {
-		fmt.Println("ℹ No steps configured")
+	if len(result.Steps) == 0 {
+		l.Info("ℹ No steps configured")
 		return subcommands.ExitSuccess
 	}
 
-	// Load Kubernetes configuration
-	fmt.Println("\n📡 Connecting to Kubernetes cluster...")
+	// 3. Setup Kubernetes Connection
+	l.Info("\n📡 Connecting to Kubernetes cluster...")
 	rc, err := c.restConfigFn()
 	if err != nil {
-		fmt.Printf("✗ Failed to load kubeconfig: %v\n", err)
-		fmt.Println("  Make sure you have kubectl configured and KUBECONFIG is set")
+		l.Error("Failed to load kubeconfig: %v", err)
+		return subcommands.ExitFailure
+	}
+	l.Info("✓ Kubernetes connection established")
+
+	// 4. Initialize Workflow
+	wf, err := c.initWorkflow(rc, l)
+	if err != nil {
+		l.Error("Initialization failed: %v", err)
 		return subcommands.ExitFailure
 	}
 
-	// Create dynamic clients
-	fmt.Println("✓ Kubernetes connection established")
+	// 5. Execute Workflow
+	l.Info("\n⚡ Applying %d steps to namespace '%s'...", len(result.Steps), c.namespace)
+	l.Info("═════════════════════════════════════════════════════════════")
 
+	// Start Spinner
+	spin.SetPrefix("⚙  ")
+	spin.Start()
+
+	// Pass the Progress Reporter (moved to a local helper)
+	results := wf.Run(ctx, &types.Workflow{Steps: result.Steps}, func(s *types.Step) bool {
+		return s.Skip
+	}, c.createProgressReporter(spin, l, len(result.Steps)))
+
+	spin.Stop("")
+
+	// 6. Final Report
+	l.Info("═════════════════════════════════════════════════════════════")
+	c.printSummary(l, result.Steps, results)
+
+	if err := c.errEvaluator(results); err != nil {
+		l.Error("\nWorkflow completed with errors.")
+		return subcommands.ExitFailure
+	}
+
+	l.Info("✓ Successfully applied %d steps\n", len(result.Steps))
+	return subcommands.ExitSuccess
+}
+
+// initWorkflow abstracts the creation of the workflow and its clients.
+func (c *applyCmd) initWorkflow(rc *rest.Config, l *ui.Logger) (workflowRunner, error) {
 	g, err := c.getterFactory(rc)
 	if err != nil {
-		fmt.Printf("✗ Failed to create getter client: %v\n", err)
-		return subcommands.ExitFailure
+		return nil, fmt.Errorf("getter: %w", err)
 	}
-
 	a, err := c.applierFactory(rc)
 	if err != nil {
-		fmt.Printf("✗ Failed to create applier client: %v\n", err)
-		return subcommands.ExitFailure
+		return nil, fmt.Errorf("applier: %w", err)
 	}
-
 	d, err := c.deletorFactory(rc)
 	if err != nil {
-		fmt.Printf("✗ Failed to create deletor client: %v\n", err)
-		return subcommands.ExitFailure
+		return nil, fmt.Errorf("deletor: %w", err)
 	}
 
-	// Create workflow
-	log := logging.NewNopLogger()
-	wf, err := c.workflowFactory(workflows.Opts{
+	return c.workflowFactory(workflows.Opts{
 		Getter:    g,
 		Applier:   a,
 		Deletor:   d,
-		Log:       log,
+		Logger:    l.Debug,
 		Cfg:       rc,
 		Namespace: c.namespace,
 	})
-	if err != nil {
-		fmt.Printf("✗ Failed to create workflow: %v\n", err)
-		return subcommands.ExitFailure
+}
+
+func (c *applyCmd) createProgressReporter(spin *ui.Spinner, l *ui.Logger, total int) workflows.StepNotifier {
+	return func(idx int, step *types.Step, skipped bool) {
+		status := "executing"
+		if skipped {
+			status = "skipped"
+		}
+		spin.SetSuffix(fmt.Sprintf("step %d/%d - %s (%s)", idx+1, total, step.ID, status))
+
+		l.V(ui.LevelDebug).Info("Processing workflow step: index=%d id=%s type=%s",
+			idx+1, step.ID, step.Type)
 	}
+}
 
-	// Create workflow spec from steps
-	spec := &types.Workflow{
-		Steps: steps,
+func (c *applyCmd) printSummary(l *ui.Logger, steps []*types.Step, results []workflows.StepResult[any]) {
+	for i, step := range steps {
+		res := results[i]
+		switch {
+		case res.ID() == "":
+			l.Info("[PEND] %s (%s) not executed", step.ID, step.Type)
+		case step.Skip:
+			l.Info("[SKIP] %s (%s)", step.ID, step.Type)
+		case res.Err() != nil:
+			l.Error("%s (%s) failed: %v", step.ID, step.Type, res.Err())
+		default:
+			l.Info("✓ %s (%s)", step.ID, step.Type)
+		}
 	}
-
-	// Execute workflow
-	fmt.Printf("\n⚡ Applying %d steps to namespace '%s'...\n", len(steps), c.namespace)
-	fmt.Println("═════════════════════════════════════════════════════════════")
-
-	results := wf.Run(ctx, spec, func(s *types.Step) bool {
-		return s.Skip // Skip steps marked with skip: true
-	})
-
-	// Check for errors
-	if err := c.errEvaluator(results); err != nil {
-		fmt.Printf("\n✗ Workflow failed: %v\n", err)
-		return subcommands.ExitFailure
-	}
-
-	// Report success
-	fmt.Println("═════════════════════════════════════════════════════════════")
-	fmt.Printf("✓ Successfully applied %d steps\n\n", len(steps))
-
-	return subcommands.ExitSuccess
 }

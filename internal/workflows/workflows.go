@@ -15,15 +15,13 @@ import (
 	varhandler "github.com/krateoplatformops/krateoctl/internal/workflows/steps/var"
 	"github.com/krateoplatformops/krateoctl/internal/workflows/types"
 	"k8s.io/client-go/rest"
-
-	"github.com/krateoplatformops/provider-runtime/pkg/logging"
 )
 
 type Opts struct {
 	Getter    *getter.Getter
 	Applier   *applier.Applier
 	Deletor   *deletor.Deletor
-	Log       logging.Logger
+	Logger    func(string, ...any)
 	Cfg       *rest.Config
 	Namespace string
 }
@@ -33,23 +31,22 @@ func New(opts Opts) (*Workflow, error) {
 		return nil, fmt.Errorf("dynamic getter, applier, or deletor cannot be nil")
 	}
 
-	if opts.Log == nil {
-		opts.Log = logging.NewNopLogger()
+	if opts.Logger == nil {
+		opts.Logger = func(string, ...any) {}
 	}
-
 	wf := &Workflow{
-		logr: opts.Log.WithValues("namespace", opts.Namespace),
-		ns:   opts.Namespace,
-		env:  cache.New[string, string](),
+		logger: opts.Logger,
+		ns:     opts.Namespace,
+		env:    cache.New[string, string](),
 	}
 
-	wf.varHandler = varhandler.VarHandler(opts.Getter, wf.env, opts.Log)
-	wf.objectHandler = objecthandler.ObjectHandler(opts.Applier, opts.Deletor, wf.env, opts.Log)
+	wf.varHandler = varhandler.VarHandler(opts.Getter, wf.env, opts.Logger)
+	wf.objectHandler = objecthandler.ObjectHandler(opts.Applier, opts.Deletor, wf.env, opts.Logger)
 	wf.chartHandler = charthandler.ChartHandler(charthandler.ChartHandlerOptions{
-		Env: wf.env,
-		Log: opts.Log,
-		Dyn: opts.Getter,
-		Cfg: opts.Cfg,
+		Env:    wf.env,
+		Logger: opts.Logger,
+		Dyn:    opts.Getter,
+		Cfg:    opts.Cfg,
 	})
 
 	return wf, nil
@@ -91,7 +88,7 @@ func Err[T any](results []StepResult[T]) error {
 }
 
 type Workflow struct {
-	logr          logging.Logger
+	logger        func(string, ...any)
 	ns            string
 	env           *cache.Cache[string, string]
 	varHandler    steps.Handler[*steps.VarResult]
@@ -104,7 +101,11 @@ func (wf *Workflow) Op(op steps.Op) {
 	wf.op = op
 }
 
-func (wf *Workflow) Run(ctx context.Context, spec *types.Workflow, skip func(*types.Step) bool) (results []StepResult[any]) {
+// StepNotifier is invoked before each workflow step is executed (or skipped).
+// The idx argument is zero-based and maps directly to the Workflow specification order.
+type StepNotifier func(idx int, step *types.Step, skipped bool)
+
+func (wf *Workflow) Run(ctx context.Context, spec *types.Workflow, skip func(*types.Step) bool, notify StepNotifier) (results []StepResult[any]) {
 	results = make([]StepResult[any], len(spec.Steps))
 
 	if wf.op == steps.Delete {
@@ -112,14 +113,21 @@ func (wf *Workflow) Run(ctx context.Context, spec *types.Workflow, skip func(*ty
 	}
 
 	for i, x := range spec.Steps {
-		if skip(x) {
-			wf.logr.Debug(fmt.Sprintf("skipping step with id: %s (%v)", x.ID, x.Type))
+		results[i] = StepResult[any]{id: x.ID}
+
+		if skip != nil && skip(x) {
+			// wf.logr.Debug(fmt.Sprintf("skipping step with id: %s (%v)", x.ID, x.Type))
+			wf.logger(fmt.Sprintf("skipping step with id: %s (%v)", x.ID, x.Type))
+			if notify != nil {
+				notify(i, x, true)
+			}
 			continue
 		}
 
-		wf.logr.Debug(fmt.Sprintf("executing step with id: %s (%v)", x.ID, x.Type))
-
-		results[i] = StepResult[any]{id: x.ID}
+		wf.logger(fmt.Sprintf("executing step with id: %s (%v)", x.ID, x.Type))
+		if notify != nil {
+			notify(i, x, false)
+		}
 
 		switch x.Type {
 		case types.TypeVar:

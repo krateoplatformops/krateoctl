@@ -102,29 +102,5 @@ func (c *planCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{
 		fmt.Printf("⚠️  Plan differs from original steps:\n%s\n", diff.Colorize(di))
 	}
 
-	// for _, step := range steps {
-	// 	doc := map[string]any{
-	// 		"id":   step.ID,
-	// 		"type": step.Type,
-	// 	}
-
-	// 	// Include skip flag when the step is disabled for this profile/component.
-	// 	if step.Skip {
-	// 		doc["skip"] = true
-	// 	}
-
-	// 	if step.With != nil && len(step.With.Raw) > 0 {
-	// 		var with any
-	// 		if err := json.Unmarshal(step.With.Raw, &with); err == nil {
-	// 			doc["with"] = with
-	// 		}
-	// 	}
-
-	// 	if err := enc.Encode(doc); err != nil {
-	// 		fmt.Fprintf(os.Stderr, "✗ Failed to encode plan document: %v\n", err)
-	// 		return subcommands.ExitFailure
-	// 	}
-	// }
-
 	return subcommands.ExitSuccess
 }

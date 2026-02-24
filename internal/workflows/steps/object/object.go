@@ -11,7 +11,6 @@ import (
 	"github.com/krateoplatformops/krateoctl/internal/expand"
 	"github.com/krateoplatformops/krateoctl/internal/workflows/steps"
 	"github.com/krateoplatformops/krateoctl/internal/workflows/types"
-	"github.com/krateoplatformops/provider-runtime/pkg/logging"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -19,7 +18,7 @@ import (
 
 var _ steps.Handler[*steps.ObjectResult] = (*objStepHandler)(nil)
 
-func ObjectHandler(app *applier.Applier, del *deletor.Deletor, env *cache.Cache[string, string], logr logging.Logger) steps.Handler[*steps.ObjectResult] {
+func ObjectHandler(app *applier.Applier, del *deletor.Deletor, env *cache.Cache[string, string], logger func(string, ...any)) steps.Handler[*steps.ObjectResult] {
 	return &objStepHandler{
 		app: app, del: del, env: env,
 		subst: func(k string) string {
@@ -29,18 +28,18 @@ func ObjectHandler(app *applier.Applier, del *deletor.Deletor, env *cache.Cache[
 
 			return "$" + k
 		},
-		logr: logr,
+		logger: logger,
 	}
 }
 
 type objStepHandler struct {
-	app   *applier.Applier
-	del   *deletor.Deletor
-	env   *cache.Cache[string, string]
-	ns    string
-	op    steps.Op
-	subst func(k string) string
-	logr  logging.Logger
+	app    *applier.Applier
+	del    *deletor.Deletor
+	env    *cache.Cache[string, string]
+	ns     string
+	op     steps.Op
+	subst  func(k string) string
+	logger func(string, ...any)
 }
 
 func (r *objStepHandler) Namespace(ns string) {
@@ -126,7 +125,7 @@ func (r *objStepHandler) toUnstructured(id string, ext *map[string]any) (*unstru
 		}
 	}
 
-	r.logr.Debug(fmt.Sprintf("DBG [object:%s]: %v", id, src))
+	r.logger(fmt.Sprintf("DBG [object:%s]: %v", id, src))
 
 	return &unstructured.Unstructured{Object: src}, nil
 }
