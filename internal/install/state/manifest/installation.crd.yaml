@@ -50,9 +50,6 @@ spec:
                   componentsDefinition:
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
-                  global:
-                    type: object
-                    x-kubernetes-preserve-unknown-fields: true
                   steps:
                     items:
                       type: object
