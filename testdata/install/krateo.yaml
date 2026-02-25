@@ -2,18 +2,6 @@
 # Declarative steps-based workflow for platform provisioning.
 # Steps execute sequentially in order, enabling natural dependency ordering.
 
-# Global settings
-global:
-  namespace: krateo-system
-  managedBy: krateoctl
-  
-  image:
-    registry: ghcr.io/krateoplatformops
-    pullPolicy: IfNotPresent
-  
-  serviceDefaults:
-    type: NodePort
-
 # ============================================================================
 # Component Definitions
 # Maps logical components to their implementation steps.
