@@ -249,17 +249,15 @@ func (c *Config) GetEnabledComponents() (map[string]bool, error) {
 		enabled[name] = val
 	}
 
-	if overrides != nil {
-		for name, ov := range overrides {
-			if _, ok := enabled[name]; ok {
-				continue
-			}
-			val := true
-			if ov.Enabled != nil {
-				val = *ov.Enabled
-			}
-			enabled[name] = val
+	for name, ov := range overrides {
+		if _, ok := enabled[name]; ok {
+			continue
 		}
+		val := true
+		if ov.Enabled != nil {
+			val = *ov.Enabled
+		}
+		enabled[name] = val
 	}
 
 	return enabled, nil
