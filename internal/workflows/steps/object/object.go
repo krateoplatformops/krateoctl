@@ -125,7 +125,7 @@ func (r *objStepHandler) toUnstructured(id string, ext *map[string]any) (*unstru
 		}
 	}
 
-	r.logger(fmt.Sprintf("DBG [object:%s]: %v", id, src))
+	r.logger(fmt.Sprintf("[object:%s]: %v", id, src))
 
 	return &unstructured.Unstructured{Object: src}, nil
 }

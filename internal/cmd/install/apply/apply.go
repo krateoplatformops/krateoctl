@@ -12,18 +12,13 @@ import (
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/applier"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/deletor"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/getter"
+	"github.com/krateoplatformops/krateoctl/internal/install/state"
 	"github.com/krateoplatformops/krateoctl/internal/subcommands"
 	"github.com/krateoplatformops/krateoctl/internal/ui"
 	"github.com/krateoplatformops/krateoctl/internal/util/kube"
 	"github.com/krateoplatformops/krateoctl/internal/workflows"
 	"github.com/krateoplatformops/krateoctl/internal/workflows/types"
 	"k8s.io/client-go/rest"
-)
-
-const (
-	defaultConfigPath    = "krateo.yaml"
-	defaultOverridesPath = "krateo-overrides.yaml"
-	defaultNamespace     = "krateo-system"
 )
 
 type workflowRunner interface {
@@ -35,6 +30,8 @@ type getterFactory func(*rest.Config) (*getter.Getter, error)
 type applierFactory func(*rest.Config) (*applier.Applier, error)
 type deletorFactory func(*rest.Config) (*deletor.Deletor, error)
 type workflowFactory func(workflows.Opts) (workflowRunner, error)
+type stateStoreFactory func(*rest.Config, string) (state.Store, error)
+type ensureCRDFunc func(context.Context, *rest.Config) error
 
 func Command() subcommands.Command {
 	return &applyCmd{}
@@ -51,6 +48,9 @@ type applyCmd struct {
 	deletorFactory  deletorFactory
 	workflowFactory workflowFactory
 	errEvaluator    func([]workflows.StepResult[any]) error
+	stateFactory    stateStoreFactory
+	ensureCRDFn     ensureCRDFunc
+	stateName       string
 }
 
 func (c *applyCmd) ensureDeps() {
@@ -76,6 +76,17 @@ func (c *applyCmd) ensureDeps() {
 			return workflows.Err(results)
 		}
 	}
+	if c.stateFactory == nil {
+		c.stateFactory = func(cfg *rest.Config, namespace string) (state.Store, error) {
+			return state.NewStore(cfg, namespace)
+		}
+	}
+	if c.ensureCRDFn == nil {
+		c.ensureCRDFn = state.EnsureCRD
+	}
+	if c.stateName == "" {
+		c.stateName = state.DefaultInstallationName
+	}
 }
 
 func (c *applyCmd) Name() string     { return "apply" }
@@ -86,15 +97,15 @@ func (c *applyCmd) Usage() string {
 	fmt.Fprintf(&wri, "%s. Load the installation config and execute the workflow.\n\n", c.Synopsis())
 	fmt.Fprint(&wri, "USAGE:\n  krateoctl install apply [FLAGS]\n\n")
 	fmt.Fprint(&wri, "FLAGS:\n")
-	fmt.Fprintf(&wri, "  -config string      path to config (default \"%s\")\n", defaultConfigPath)
-	fmt.Fprintf(&wri, "  -namespace string   target namespace (default \"%s\")\n", defaultNamespace)
+	fmt.Fprintf(&wri, "  -config string      path to config (default \"%s\")\n", shared.DefaultConfigPath)
+	fmt.Fprintf(&wri, "  -namespace string   target namespace (default \"%s\")\n", shared.DefaultNamespace)
 	fmt.Fprint(&wri, "  -profile string     optional override profile\n")
 	return wri.String()
 }
 
 func (c *applyCmd) SetFlags(f *flag.FlagSet) {
-	f.StringVar(&c.configFile, "config", defaultConfigPath, "path to configuration file")
-	f.StringVar(&c.namespace, "namespace", defaultNamespace, "kubernetes namespace for deployment")
+	f.StringVar(&c.configFile, "config", shared.DefaultConfigPath, "path to configuration file")
+	f.StringVar(&c.namespace, "namespace", shared.DefaultNamespace, "kubernetes namespace for deployment")
 	f.StringVar(&c.profile, "profile", "", "optional profile name")
 }
 
@@ -112,10 +123,12 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 	l := ui.NewLogger(spin, logLevel)
 	defer spin.Stop("")
 
+	var installationStore state.Store
+
 	// 2. Load Configuration
 	result, err := shared.LoadConfigAndSteps(config.LoadOptions{
 		ConfigPath:        c.configFile,
-		UserOverridesPath: defaultOverridesPath,
+		UserOverridesPath: shared.DefaultOverridesPath,
 		Profile:           c.profile,
 	})
 	if err != nil {
@@ -128,6 +141,12 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 		return subcommands.ExitSuccess
 	}
 
+	snapshot, err := state.BuildSnapshot(result.Config, result.Steps)
+	if err != nil {
+		l.Error("Failed to build installation snapshot: %v", err)
+		return subcommands.ExitFailure
+	}
+
 	// 3. Setup Kubernetes Connection
 	l.Info("\n📡 Connecting to Kubernetes cluster...")
 	rc, err := c.restConfigFn()
@@ -136,6 +155,17 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 		return subcommands.ExitFailure
 	}
 	l.Info("✓ Kubernetes connection established")
+
+	if err := c.ensureCRDFn(ctx, rc); err != nil {
+		l.Error("Failed to ensure installation CRD: %v", err)
+		return subcommands.ExitFailure
+	}
+
+	installationStore, err = c.stateFactory(rc, c.namespace)
+	if err != nil {
+		l.Error("Failed to initialize installation state store: %v", err)
+		return subcommands.ExitFailure
+	}
 
 	// 4. Initialize Workflow
 	wf, err := c.initWorkflow(rc, l)
@@ -166,6 +196,14 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 	if err := c.errEvaluator(results); err != nil {
 		l.Error("\nWorkflow completed with errors.")
 		return subcommands.ExitFailure
+	}
+
+	if installationStore != nil && snapshot != nil {
+		if err := installationStore.Save(ctx, c.stateName, snapshot); err != nil {
+			l.Warn("⚠ Unable to persist installation snapshot: %v", err)
+		} else {
+			l.Info("✓ Installation snapshot saved as %q", c.stateName)
+		}
 	}
 
 	l.Info("✓ Successfully applied %d steps\n", len(result.Steps))

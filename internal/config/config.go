@@ -190,19 +190,76 @@ func (c *Config) Raw() map[string]any {
 	return c.data
 }
 
-// Add this method
-func (c *Config) GetEnabledComponents() (map[string]bool, error) {
-	if c.doc == nil || len(c.doc.Components) == 0 {
-		return map[string]bool{}, nil
+func (c *Config) componentDefinitions() map[string]ComponentConfig {
+	if c.doc == nil {
+		return nil
 	}
 
-	enabled := make(map[string]bool)
-	for name, comp := range c.doc.Components {
-		if comp.Enabled == nil {
-			enabled[name] = true
-			continue
+	defs := c.doc.ComponentsDefinition
+	overrides := c.doc.Components
+
+	switch {
+	case len(defs) == 0 && len(overrides) == 0:
+		return nil
+	case len(defs) == 0:
+		return overrides
+	case len(overrides) == 0:
+		return defs
+	default:
+		merged := make(map[string]ComponentConfig, len(defs)+len(overrides))
+		for name, comp := range defs {
+			merged[name] = comp
 		}
-		enabled[name] = *comp.Enabled
+		for name, comp := range overrides {
+			if _, exists := merged[name]; !exists {
+				merged[name] = comp
+			}
+		}
+		return merged
+	}
+}
+
+func (c *Config) componentOverrides() map[string]ComponentConfig {
+	if c.doc == nil || len(c.doc.Components) == 0 {
+		return nil
+	}
+	return c.doc.Components
+}
+
+// Add this method
+func (c *Config) GetEnabledComponents() (map[string]bool, error) {
+	definitions := c.componentDefinitions()
+	overrides := c.componentOverrides()
+
+	enabled := make(map[string]bool)
+	if len(definitions) == 0 && len(overrides) == 0 {
+		return enabled, nil
+	}
+
+	for name, comp := range definitions {
+		val := true
+		if comp.Enabled != nil {
+			val = *comp.Enabled
+		}
+		if overrides != nil {
+			if ov, ok := overrides[name]; ok && ov.Enabled != nil {
+				val = *ov.Enabled
+			}
+		}
+		enabled[name] = val
+	}
+
+	if overrides != nil {
+		for name, ov := range overrides {
+			if _, ok := enabled[name]; ok {
+				continue
+			}
+			val := true
+			if ov.Enabled != nil {
+				val = *ov.Enabled
+			}
+			enabled[name] = val
+		}
 	}
 
 	return enabled, nil
@@ -210,11 +267,12 @@ func (c *Config) GetEnabledComponents() (map[string]bool, error) {
 
 // Add this method to get the component that owns a step
 func (c *Config) GetComponentForStep(stepID string) (string, error) {
-	if c.doc == nil || len(c.doc.Components) == 0 {
+	definitions := c.componentDefinitions()
+	if len(definitions) == 0 {
 		return "", nil
 	}
 
-	for name, comp := range c.doc.Components {
+	for name, comp := range definitions {
 		for _, step := range comp.Steps {
 			if step == stepID {
 				return name, nil
@@ -276,9 +334,12 @@ func (c *Config) GetActiveSteps() ([]*types.Step, error) {
 //
 // where later entries override earlier ones on key conflicts.
 func (c *Config) applyComponentOverrides(steps []*types.Step) error {
-	if c.doc == nil || len(c.doc.Components) == 0 {
+	definitions := c.componentDefinitions()
+	if len(definitions) == 0 {
 		return nil
 	}
+
+	overrides := c.componentOverrides()
 
 	for _, step := range steps {
 		if step.Type != types.TypeChart || step.With == nil {
@@ -290,10 +351,20 @@ func (c *Config) applyComponentOverrides(steps []*types.Step) error {
 			continue
 		}
 
-		component, ok := c.doc.Components[componentName]
+		component, ok := definitions[componentName]
 		if !ok {
 			continue
 		}
+
+		var override ComponentConfig
+		if overrides != nil {
+			if ov, ok := overrides[componentName]; ok {
+				override = ov
+			}
+		}
+
+		defaultsSrc := mergeComponentValueMaps(component.HelmDefaults, override.HelmDefaults)
+		stepConfigSrc := mergeStepConfig(component.StepConfig, override.StepConfig)
 
 		if step.With == nil {
 			step.With = &map[string]any{}
@@ -302,7 +373,7 @@ func (c *Config) applyComponentOverrides(steps []*types.Step) error {
 
 		stepValues := ensureMap(withData, "values")
 
-		defaultValues, defaultWith, err := splitDefaults(component.HelmDefaults, componentName)
+		defaultValues, defaultWith, err := splitDefaults(defaultsSrc, componentName)
 		if err != nil {
 			return err
 		}
@@ -313,7 +384,7 @@ func (c *Config) applyComponentOverrides(steps []*types.Step) error {
 			withData = mergeConfigs(withData, defaultWith)
 		}
 
-		stepSpecificValues, stepSpecificWith, err := parseStepOverrides(component.StepConfig, componentName, step.ID)
+		stepSpecificValues, stepSpecificWith, err := parseStepOverrides(stepConfigSrc, componentName, step.ID)
 		if err != nil {
 			return err
 		}
@@ -402,6 +473,65 @@ func ensureMap(target map[string]any, key string) map[string]any {
 	newMap := make(map[string]any)
 	target[key] = newMap
 	return newMap
+}
+
+func mergeComponentValueMaps(base, override map[string]any) map[string]any {
+	if len(base) == 0 && len(override) == 0 {
+		return nil
+	}
+
+	merged := make(map[string]any)
+	if len(base) > 0 {
+		mergeConfigs(merged, base)
+	}
+	if len(override) > 0 {
+		mergeConfigs(merged, override)
+	}
+	if len(merged) == 0 {
+		return nil
+	}
+	return merged
+}
+
+func mergeStepConfig(base, override map[string]map[string]any) map[string]map[string]any {
+	if len(base) == 0 && len(override) == 0 {
+		return nil
+	}
+
+	result := make(map[string]map[string]any, len(base)+len(override))
+	for key, val := range base {
+		if val == nil {
+			continue
+		}
+		result[key] = copyAnyMap(val)
+	}
+
+	for key, val := range override {
+		if val == nil {
+			continue
+		}
+		if existing, ok := result[key]; ok {
+			result[key] = mergeConfigs(existing, val)
+			continue
+		}
+		result[key] = copyAnyMap(val)
+	}
+
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func copyAnyMap(src map[string]any) map[string]any {
+	if len(src) == 0 {
+		return nil
+	}
+	dup := make(map[string]any, len(src))
+	for key, val := range src {
+		dup[key] = val
+	}
+	return dup
 }
 
 func decodeDocument(data map[string]any) (*Document, error) {

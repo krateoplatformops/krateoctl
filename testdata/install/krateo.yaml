@@ -19,7 +19,7 @@ global:
 # Maps logical components to their implementation steps.
 # Use these names in krateo-overrides.yaml for component-level configuration.
 # ============================================================================
-components:
+componentsDefinition:
   config:
     description: "Configuration and secrets"
     steps:
