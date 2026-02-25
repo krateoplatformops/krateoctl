@@ -1,0 +1,53 @@
+componentsDefinition:
+  backend:
+    description: "Core backend services (API, controllers, composition engine)"
+    steps:
+      - create-jwt-sign-key
+      - install-authn
+      - extract-authn-port
+      - install-snowplow
+      - extract-snowplow-port
+
+  eventstack:
+    description: "Event streaming and storage stack (EventRouter + EventSSE)"
+    steps:
+      - install-eventrouter
+      - install-eventsse-etcd
+      - install-eventsse
+      - extract-eventsse-port
+      - extract-eventsse-internal-port
+      - install-sweeper
+
+  frontend:
+    description: "Web UI and platform dashboard"
+    steps:
+      - install-frontend
+
+  portal-defaults:
+    description: "Portal starter template"
+    steps:
+      - install-portal
+
+  composable-operations:
+    description: "Core composition and orchestration engine"
+    steps:
+      - install-core-provider
+
+  operator-generator:
+    description: "OpenAPI schema generation provider"
+    steps:
+      - install-oasgen-provider
+
+  finops:
+    description: "Cost management and FinOps analytics (optional) and OPA Gatekeeper for policy enforcement (optional)"
+    steps:
+      - install-finops-cratedb
+      - install-finops-operator-exporter
+      - install-finops-operator-focus
+      - install-finops-database-handler
+      - extract-finops-database-handler-port
+      - install-finops-database-handler-uploader
+      - install-finops-notebooks
+      - install-finops-composition-definition-parser
+      - install-finops-operator-scraper
+      - install-opa

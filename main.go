@@ -12,6 +12,7 @@ import (
 	"github.com/krateoplatformops/krateoctl/internal/cmd/install"
 	"github.com/krateoplatformops/krateoctl/internal/cmd/users"
 	"github.com/krateoplatformops/krateoctl/internal/subcommands"
+	"k8s.io/client-go/rest"
 )
 
 const (
@@ -46,7 +47,7 @@ func main() {
 	tool.Register(users.AddCommand(), categoryUtilities)
 
 	flag.Parse()
-
+	rest.SetDefaultWarningHandler(rest.NoWarnings{})
 	ctx := context.Background()
 	os.Exit(int(tool.Execute(ctx)))
 }

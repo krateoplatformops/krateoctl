@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/krateoplatformops/krateoctl/internal/cmd/install/apply"
+	"github.com/krateoplatformops/krateoctl/internal/cmd/install/migrate"
 	"github.com/krateoplatformops/krateoctl/internal/cmd/install/plan"
 	"github.com/krateoplatformops/krateoctl/internal/subcommands"
 )
@@ -25,10 +26,11 @@ func (c *installCmd) Usage() string {
 	w := &bytes.Buffer{}
 	fmt.Fprintf(w, "%s\n\n", c.Synopsis())
 	fmt.Fprint(w, "USAGE:\n\n")
-	fmt.Fprint(w, "  krateoctl install <plan|apply> [FLAGS]\n\n")
+	fmt.Fprint(w, "  krateoctl install <plan|apply|migrate> [FLAGS]\n\n")
 	fmt.Fprint(w, "SUBCOMMANDS:\n\n")
 	fmt.Fprint(w, "  plan   preview configuration changes\n")
 	fmt.Fprint(w, "  apply  apply configuration changes to cluster\n")
+	fmt.Fprint(w, "  migrate convert legacy KrateoPlatformOps CRs to krateo.yaml\n")
 	return w.String()
 }
 
@@ -50,8 +52,10 @@ func (c *installCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...any) su
 		cmd = plan.Command()
 	case "apply":
 		cmd = apply.Command()
+	case "migrate":
+		cmd = migrate.Command()
 	default:
-		fmt.Fprintf(os.Stderr, "unknown install subcommand %q (expected: plan|apply)\n", name)
+		fmt.Fprintf(os.Stderr, "unknown install subcommand %q (expected: plan|apply|migrate)\n", name)
 		return subcommands.ExitUsageError
 	}
 

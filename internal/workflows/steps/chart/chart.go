@@ -134,6 +134,14 @@ func (r *chartStepHandler) Handle(ctx context.Context, id string, ext *map[strin
 				return result, fmt.Errorf("failed to install chart: %w", err)
 			}
 		} else {
+			if release.Status == helmconfig.StatusPendingInstall || release.Status == helmconfig.StatusPendingUpgrade || release.Status == helmconfig.StatusPendingRollback {
+				release, err = cli.Rollback(ctx, releaseName, &helmconfig.RollbackConfig{
+					ReleaseVersion: release.Revision,
+				})
+				if err != nil {
+					return result, fmt.Errorf("failed to rollback release %s: %w", releaseName, err)
+				}
+			}
 			release, err = cli.Upgrade(ctx,
 				releaseName,
 				spec.URL,

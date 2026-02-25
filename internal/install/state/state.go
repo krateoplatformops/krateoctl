@@ -19,6 +19,8 @@ import (
 const (
 	// DefaultInstallationName is the name used for the installation snapshot resource.
 	DefaultInstallationName = "krateoctl"
+	// InstallationFinalizer prevents accidental deletion of the installation state.
+	InstallationFinalizer = "krateoctl.krateo.io/protect-state"
 )
 
 var installationGVR = schema.GroupVersionResource{
@@ -27,9 +29,8 @@ var installationGVR = schema.GroupVersionResource{
 	Resource: "installations",
 }
 
-// Snapshot captures the computed installation configuration (global, components, steps).
+// Snapshot captures the computed installation configuration (components, steps).
 type Snapshot struct {
-	Global               map[string]any   `json:"global,omitempty" yaml:"global,omitempty"`
 	ComponentsDefinition map[string]any   `json:"componentsDefinition,omitempty" yaml:"componentsDefinition,omitempty"`
 	Steps                []map[string]any `json:"steps,omitempty" yaml:"steps,omitempty"`
 }
@@ -83,31 +84,71 @@ func (m *manager) Save(ctx context.Context, name string, snapshot *Snapshot) err
 			APIVersion: "krateo.io/v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: m.namespace,
+			Name:       name,
+			Namespace:  m.namespace,
+			Finalizers: []string{InstallationFinalizer},
 		},
 		Spec: InstallationSpec{Spec: *snapshot},
 	}
 
-	obj, err := runtime.DefaultUnstructuredConverter.ToUnstructured(inst)
-	if err != nil {
-		return fmt.Errorf("convert installation to unstructured: %w", err)
-	}
-
-	u := &unstructured.Unstructured{Object: obj}
-
 	existing, err := m.resource().Get(ctx, name, metav1.GetOptions{})
 	switch {
 	case apierrors.IsNotFound(err):
+		u, convErr := installationToUnstructured(inst)
+		if convErr != nil {
+			return convErr
+		}
 		_, createErr := m.resource().Create(ctx, u, metav1.CreateOptions{})
 		return createErr
 	case err != nil:
 		return fmt.Errorf("get installation: %w", err)
 	default:
-		u.SetResourceVersion(existing.GetResourceVersion())
+		inst.ObjectMeta.ResourceVersion = existing.GetResourceVersion()
+		inst.ObjectMeta.Finalizers = mergeFinalizers(existing.GetFinalizers(), inst.ObjectMeta.Finalizers)
+		u, convErr := installationToUnstructured(inst)
+		if convErr != nil {
+			return convErr
+		}
 		_, updateErr := m.resource().Update(ctx, u, metav1.UpdateOptions{})
 		return updateErr
 	}
+}
+
+func installationToUnstructured(inst *Installation) (*unstructured.Unstructured, error) {
+	obj, err := runtime.DefaultUnstructuredConverter.ToUnstructured(inst)
+	if err != nil {
+		return nil, fmt.Errorf("convert installation to unstructured: %w", err)
+	}
+	return &unstructured.Unstructured{Object: obj}, nil
+}
+
+func mergeFinalizers(existing, desired []string) []string {
+	result := make([]string, 0, len(existing)+len(desired))
+	seen := make(map[string]struct{}, len(existing)+len(desired))
+
+	for _, f := range existing {
+		if f == "" {
+			continue
+		}
+		if _, ok := seen[f]; ok {
+			continue
+		}
+		result = append(result, f)
+		seen[f] = struct{}{}
+	}
+
+	for _, f := range desired {
+		if f == "" {
+			continue
+		}
+		if _, ok := seen[f]; ok {
+			continue
+		}
+		result = append(result, f)
+		seen[f] = struct{}{}
+	}
+
+	return result
 }
 
 // Load returns the stored snapshot for the given installation name.
@@ -133,12 +174,6 @@ func BuildSnapshot(cfg *config.Config, steps []*types.Step) (*Snapshot, error) {
 
 	if cfg != nil {
 		if doc := cfg.Document(); doc != nil {
-			global, err := copyMap(doc.Global)
-			if err != nil {
-				return nil, err
-			}
-			snap.Global = global
-
 			components, err := copyMap(doc.ComponentsDefinition)
 			if err != nil {
 				return nil, err
@@ -205,9 +240,6 @@ func normalizeSnapshot(snap *Snapshot) {
 		return
 	}
 
-	if snap.Global != nil && len(snap.Global) == 0 {
-		snap.Global = nil
-	}
 	if snap.ComponentsDefinition != nil && len(snap.ComponentsDefinition) == 0 {
 		snap.ComponentsDefinition = nil
 	}
