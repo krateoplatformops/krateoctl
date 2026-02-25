@@ -34,10 +34,10 @@ type Spinner struct {
 // NewSpinner creates a spinner that writes frames to w.
 func NewSpinner(w io.Writer) *Spinner {
 	frames := brailleFrames
-	frameFormat := "\x1b[?7l\r%s%s%s\x1b[?7h"
+	frameFormat := "\x1b[?7l\r\x1b[2K%s%s%s\x1b[?7h"
 	if runtime.GOOS == "windows" {
 		frames = asciiFrames
-		frameFormat = "\r%s%s%s"
+		frameFormat = "\r\x1b[2K%s%s%s"
 	}
 	return &Spinner{
 		frameFormat: frameFormat,
