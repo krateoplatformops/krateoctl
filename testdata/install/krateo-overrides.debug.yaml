@@ -33,6 +33,8 @@ components:
   authn:
     stepConfig:
       install-authn:
+        releaseName: authn2
+        version: 0.22.3
         helmValues:
           env:
             AUTHN_DEBUG: "true"  # only applies to install-authn step
@@ -67,8 +69,11 @@ components:
           env:
             CORE_PROVIDER_DEBUG: "true"
           cdc:
+            image:
+              tag: 0.20.3
             env:
               COMPOSITION_CONTROLLER_DEBUG: "true"
+              COMPOSITION_CONTROLLER_SAFE_RELEASE_NAME: "false"
           chartInspector:
             env:
               DEBUG: "true"

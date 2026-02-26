@@ -10,17 +10,30 @@ import (
 	"github.com/krateoplatformops/krateoctl/internal/cmd/install/shared"
 	"github.com/krateoplatformops/krateoctl/internal/config"
 	"github.com/krateoplatformops/krateoctl/internal/diff"
+	"github.com/krateoplatformops/krateoctl/internal/install/state"
 	"github.com/krateoplatformops/krateoctl/internal/subcommands"
+	"github.com/krateoplatformops/krateoctl/internal/ui"
+	"github.com/krateoplatformops/krateoctl/internal/util/kube"
 	"gopkg.in/yaml.v3"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/client-go/rest"
 )
 
 func Command() subcommands.Command {
 	return &planCmd{}
 }
 
+type restConfigProvider func() (*rest.Config, error)
+type stateStoreFactory func(*rest.Config, string) (state.Store, error)
+
 type planCmd struct {
-	configFile string
-	profile    string
+	configFile    string
+	profile       string
+	namespace     string
+	diffInstalled bool
+	restConfigFn  restConfigProvider
+	stateFactory  stateStoreFactory
+	stateName     string
 }
 
 func (c *planCmd) Name() string     { return "plan" }
@@ -35,9 +48,13 @@ func (c *planCmd) Usage() string {
 
 	fmt.Fprint(&wri, "FLAGS:\n\n")
 	fmt.Fprint(&wri, "  -config string\n")
-	fmt.Fprint(&wri, "        path to installation configuration file (default \"krateo.yaml\")\n")
+	fmt.Fprintf(&wri, "        path to installation configuration file (default \"%s\")\n", shared.DefaultConfigPath)
 	fmt.Fprint(&wri, "  -profile string\n")
-	fmt.Fprint(&wri, "        optional profile name defined in krateo-overrides.yaml (e.g. dev, prod)\n\n")
+	fmt.Fprint(&wri, "        optional profile name defined in krateo-overrides.yaml (e.g. dev, prod)\n")
+	fmt.Fprint(&wri, "  -namespace string\n")
+	fmt.Fprintf(&wri, "        namespace where the installation snapshot is stored (default \"%s\")\n", shared.DefaultNamespace)
+	fmt.Fprint(&wri, "  -diff-installed\n")
+	fmt.Fprint(&wri, "        compare computed plan against the stored installation snapshot\n\n")
 
 	fmt.Fprint(&wri, "CONVENTIONS:\n\n")
 	fmt.Fprint(&wri, "  - Main config is read from krateo.yaml (overridable with -config).\n")
@@ -58,26 +75,60 @@ func (c *planCmd) Usage() string {
 }
 
 func (c *planCmd) SetFlags(f *flag.FlagSet) {
-	f.StringVar(&c.configFile, "config", "krateo.yaml", "path to configuration file")
+	f.StringVar(&c.configFile, "config", shared.DefaultConfigPath, "path to configuration file")
 	f.StringVar(&c.profile, "profile", "", "optional profile name defined in krateo-overrides.yaml")
+	f.StringVar(&c.namespace, "namespace", shared.DefaultNamespace, "kubernetes namespace where the installation snapshot is stored")
+	f.BoolVar(&c.diffInstalled, "diff-installed", false, "compare the computed plan with the stored installation snapshot")
+}
+
+func (c *planCmd) ensureDeps() {
+	if c.namespace == "" {
+		c.namespace = shared.DefaultNamespace
+	}
+	if c.restConfigFn == nil {
+		c.restConfigFn = kube.RestConfig
+	}
+	if c.stateFactory == nil {
+		c.stateFactory = func(cfg *rest.Config, namespace string) (state.Store, error) {
+			return state.NewStore(cfg, namespace)
+		}
+	}
+	if c.stateName == "" {
+		c.stateName = state.DefaultInstallationName
+	}
 }
 
 func (c *planCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+	c.ensureDeps()
+
+	debugMode := os.Getenv("KRATEO_DEBUG") != "" || c.profile == "debug"
+	logLevel := ui.LevelInfo
+	if debugMode {
+		logLevel = ui.LevelDebug
+	}
+	l := ui.NewLogger(os.Stderr, logLevel)
+
 	result, err := shared.LoadConfigAndSteps(config.LoadOptions{
 		ConfigPath:        c.configFile,
-		UserOverridesPath: "krateo-overrides.yaml",
+		UserOverridesPath: shared.DefaultOverridesPath,
 		Profile:           c.profile,
 	})
 	if err != nil {
-		fmt.Printf("✗ %v\n", err)
+		l.Error("Failed to load configuration: %v", err)
 		return subcommands.ExitFailure
 	}
 
 	steps := result.Steps
 
 	if len(steps) == 0 {
-		fmt.Println("ℹ No steps configured")
+		l.Info("ℹ No steps configured")
 		return subcommands.ExitSuccess
+	}
+
+	snapshot, err := state.BuildSnapshot(result.Config, steps)
+	if err != nil {
+		l.Error("Failed to build installation snapshot: %v", err)
+		return subcommands.ExitFailure
 	}
 
 	// Instead of the current pretty printer, emit multi‑doc YAML
@@ -86,45 +137,65 @@ func (c *planCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{
 
 	boriginalSteps, err := yaml.Marshal(result.OriginalSteps)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "✗ Failed to marshal original steps: %v\n", err)
+		l.Error("✗ Failed to marshal original steps: %v", err)
 		return subcommands.ExitFailure
 	}
 
 	bSteps, err := yaml.Marshal(steps)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "✗ Failed to marshal steps: %v\n", err)
+		l.Error("✗ Failed to marshal steps: %v", err)
 		return subcommands.ExitFailure
 	}
 
-	di := diff.Diff("original", boriginalSteps, "computed", bSteps)
+	if c.diffInstalled {
+		rc, err := c.restConfigFn()
+		if err != nil {
+			l.Error("Failed to load kubeconfig for diff: %v", err)
+			return subcommands.ExitFailure
+		}
 
-	if len(di) > 0 {
-		fmt.Printf("⚠️  Plan differs from original steps:\n%s\n", diff.Colorize(di))
+		store, err := c.stateFactory(rc, c.namespace)
+		if err != nil {
+			l.Error("Failed to initialize installation state store: %v", err)
+			return subcommands.ExitFailure
+		}
+
+		installed, err := store.Load(ctx, c.stateName)
+		switch {
+		case apierrors.IsNotFound(err):
+			l.Info("ℹ Installation snapshot %q not found in namespace %q", c.stateName, c.namespace)
+		case err != nil:
+			l.Error("Failed to read installation snapshot: %v", err)
+			return subcommands.ExitFailure
+		default:
+			installedBytes, err := yaml.Marshal(installed)
+			if err != nil {
+				l.Error("Failed to marshal stored snapshot: %v", err)
+				return subcommands.ExitFailure
+			}
+
+			planBytes, err := yaml.Marshal(snapshot)
+			if err != nil {
+				l.Error("Failed to marshal computed snapshot: %v", err)
+				return subcommands.ExitFailure
+			}
+
+			delta := diff.Diff("installed", installedBytes, "plan", planBytes)
+			if len(delta) == 0 {
+				l.Info("✓ Computed plan matches stored snapshot %q", c.stateName)
+			} else {
+				l.Warn("⚠️  Differences vs stored snapshot %q in namespace %q:\n%s", c.stateName, c.namespace, diff.Colorize(delta))
+			}
+		}
+	} else {
+		di := diff.Diff("original", boriginalSteps, "computed", bSteps)
+
+		if len(di) > 0 {
+			l.Warn("⚠️  Plan differs from original steps:\n%s", diff.Colorize(di))
+		} else {
+			l.Info("✓ Computed plan matches original steps")
+		}
 	}
-
-	// for _, step := range steps {
-	// 	doc := map[string]any{
-	// 		"id":   step.ID,
-	// 		"type": step.Type,
-	// 	}
-
-	// 	// Include skip flag when the step is disabled for this profile/component.
-	// 	if step.Skip {
-	// 		doc["skip"] = true
-	// 	}
-
-	// 	if step.With != nil && len(step.With.Raw) > 0 {
-	// 		var with any
-	// 		if err := json.Unmarshal(step.With.Raw, &with); err == nil {
-	// 			doc["with"] = with
-	// 		}
-	// 	}
-
-	// 	if err := enc.Encode(doc); err != nil {
-	// 		fmt.Fprintf(os.Stderr, "✗ Failed to encode plan document: %v\n", err)
-	// 		return subcommands.ExitFailure
-	// 	}
-	// }
 
 	return subcommands.ExitSuccess
 }

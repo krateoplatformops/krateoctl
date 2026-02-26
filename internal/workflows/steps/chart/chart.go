@@ -7,28 +7,28 @@ import (
 
 	"github.com/krateoplatformops/krateoctl/internal/cache"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/getter"
+	"github.com/krateoplatformops/krateoctl/internal/expand"
 	helmconfig "github.com/krateoplatformops/plumbing/helm"
 	helm "github.com/krateoplatformops/plumbing/helm/v3"
 
 	"github.com/krateoplatformops/krateoctl/internal/workflows/steps"
 	"github.com/krateoplatformops/krateoctl/internal/workflows/types"
-	"github.com/krateoplatformops/provider-runtime/pkg/logging"
 	"k8s.io/client-go/rest"
 )
 
 type ChartHandlerOptions struct {
-	Dyn *getter.Getter
-	Env *cache.Cache[string, string]
-	Log logging.Logger
-	Cfg *rest.Config
+	Dyn    *getter.Getter
+	Env    *cache.Cache[string, string]
+	Cfg    *rest.Config
+	Logger func(string, ...any)
 }
 
 func ChartHandler(opts ChartHandlerOptions) steps.Handler[*steps.ChartResult] {
 	hdl := &chartStepHandler{
-		env:  opts.Env,
-		logr: opts.Log,
-		dyn:  opts.Dyn,
-		cfg:  opts.Cfg,
+		env:    opts.Env,
+		dyn:    opts.Dyn,
+		cfg:    opts.Cfg,
+		logger: opts.Logger,
 	}
 	hdl.subst = func(k string) string {
 		if v, ok := hdl.env.Get(k); ok {
@@ -49,7 +49,7 @@ type chartStepHandler struct {
 	op     steps.Op
 	subst  func(k string) string
 	render bool
-	logr   logging.Logger
+	logger func(string, ...any)
 	dyn    *getter.Getter
 	cfg    *rest.Config
 }
@@ -75,6 +75,11 @@ func (r *chartStepHandler) Handle(ctx context.Context, id string, ext *map[strin
 		return nil, fmt.Errorf("failed to unmarshal chart step input: %w", err)
 	}
 	spec.SetDefaults()
+	if expanded := r.expandValues(spec.Values); expanded != nil {
+		if valuesMap, ok := expanded.(map[string]any); ok {
+			spec.Values = valuesMap
+		}
+	}
 
 	namespace := r.ns
 	if spec.Namespace != "" {
@@ -105,8 +110,6 @@ func (r *chartStepHandler) Handle(ctx context.Context, id string, ext *map[strin
 			releaseName = spec.ReleaseName
 		}
 
-		fmt.Println("Release name:", releaseName)
-
 		release, err := cli.GetRelease(ctx, releaseName, &helmconfig.GetConfig{})
 		if err != nil {
 			return nil, fmt.Errorf("failed to get release: %w", err)
@@ -131,6 +134,14 @@ func (r *chartStepHandler) Handle(ctx context.Context, id string, ext *map[strin
 				return result, fmt.Errorf("failed to install chart: %w", err)
 			}
 		} else {
+			if release.Status == helmconfig.StatusPendingInstall || release.Status == helmconfig.StatusPendingUpgrade || release.Status == helmconfig.StatusPendingRollback {
+				release, err = cli.Rollback(ctx, releaseName, &helmconfig.RollbackConfig{
+					ReleaseVersion: release.Revision,
+				})
+				if err != nil {
+					return result, fmt.Errorf("failed to rollback release %s: %w", releaseName, err)
+				}
+			}
 			release, err = cli.Upgrade(ctx,
 				releaseName,
 				spec.URL,
@@ -143,7 +154,7 @@ func (r *chartStepHandler) Handle(ctx context.Context, id string, ext *map[strin
 			}
 		}
 
-		r.logr.Debug(fmt.Sprintf(
+		r.logger(fmt.Sprintf(
 			"[chart:%s]: %s operation completed for release %s",
 			id, result.Operation, result.ReleaseName))
 
@@ -161,9 +172,29 @@ func (r *chartStepHandler) Handle(ctx context.Context, id string, ext *map[strin
 
 	result.Status = "uninstalled"
 
-	r.logr.Debug(fmt.Sprintf(
+	r.logger(fmt.Sprintf(
 		"[chart:%s]: uninstall operation completed for release %s",
 		id, result.ReleaseName))
 
 	return result, nil
+}
+
+// expandValues walks Helm values and resolves ${VAR} placeholders via the shared cache.
+func (r *chartStepHandler) expandValues(val any) any {
+	switch v := val.(type) {
+	case map[string]any:
+		for key, elem := range v {
+			v[key] = r.expandValues(elem)
+		}
+		return v
+	case []any:
+		for i, elem := range v {
+			v[i] = r.expandValues(elem)
+		}
+		return v
+	case string:
+		return expand.Expand(v, "", r.subst)
+	default:
+		return val
+	}
 }

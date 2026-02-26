@@ -4,10 +4,10 @@ import "github.com/krateoplatformops/krateoctl/internal/workflows/types"
 
 // Document represents the structured krateo.yaml configuration.
 type Document struct {
-	Global     map[string]interface{}     `json:"global,omitempty" yaml:"global,omitempty"`
-	Modules    map[string]ModuleConfig    `json:"modules,omitempty" yaml:"modules,omitempty"`
-	Components map[string]ComponentConfig `json:"components,omitempty" yaml:"components,omitempty"`
-	Steps      []StepDefinition           `json:"steps,omitempty" yaml:"steps,omitempty"`
+	Modules              map[string]ModuleConfig    `json:"modules,omitempty" yaml:"modules,omitempty"`
+	ComponentsDefinition map[string]ComponentConfig `json:"componentsDefinition,omitempty" yaml:"componentsDefinition,omitempty"`
+	Components           map[string]ComponentConfig `json:"components,omitempty" yaml:"components,omitempty"`
+	Steps                []StepDefinition           `json:"steps,omitempty" yaml:"steps,omitempty"`
 }
 
 // ModuleConfig describes a single module entry in the configuration.

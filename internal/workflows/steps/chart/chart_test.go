@@ -12,7 +12,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/e2e-framework/klient/k8s/resources"
 	"sigs.k8s.io/e2e-framework/pkg/env"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
@@ -23,7 +22,6 @@ import (
 	"github.com/krateoplatformops/krateoctl/internal/cache"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/getter"
 	"github.com/krateoplatformops/krateoctl/internal/workflows/steps"
-	"github.com/krateoplatformops/provider-runtime/pkg/logging"
 )
 
 var (
@@ -427,13 +425,10 @@ func createChartHandler(cfg *envconf.Config) (*chartStepHandler, error) {
 	}
 
 	env := cache.New[string, string]()
-	zl := zap.New(zap.UseDevMode(true))
-	log := logging.NewLogrLogger(zl.WithName("chart-test"))
 
 	handler := ChartHandler(ChartHandlerOptions{
 		Dyn: getter,
 		Env: env,
-		Log: log,
 		Cfg: cfg.Client().RESTConfig(),
 	})
 
@@ -443,14 +438,10 @@ func createChartHandler(cfg *envconf.Config) (*chartStepHandler, error) {
 func createChartHandlerWithEnv(cfg *envconf.Config, env *cache.Cache[string, string]) (*chartStepHandler, error) {
 	getter, _ := getter.NewGetter(cfg.Client().RESTConfig())
 
-	zl := zap.New(zap.UseDevMode(true))
-	log := logging.NewLogrLogger(zl.WithName("chart-test"))
-
 	handler := ChartHandler(ChartHandlerOptions{
 		Dyn: getter,
 		Cfg: cfg.Client().RESTConfig(),
 		Env: env,
-		Log: log,
 	})
 
 	return handler.(*chartStepHandler), nil

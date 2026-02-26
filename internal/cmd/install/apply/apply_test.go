@@ -11,6 +11,7 @@ import (
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/applier"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/deletor"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/getter"
+	"github.com/krateoplatformops/krateoctl/internal/install/state"
 	"github.com/krateoplatformops/krateoctl/internal/subcommands"
 	"github.com/krateoplatformops/krateoctl/internal/workflows"
 	"github.com/krateoplatformops/krateoctl/internal/workflows/types"
@@ -21,6 +22,7 @@ func TestApplyExecuteSuccess(t *testing.T) {
 	cfg := writeApplyConfig(t, "steps:\n  - id: step-one\n    type: chart\n    with:\n      releaseName: demo\n")
 
 	runner := &stubWorkflow{}
+	store := &stubStateStore{}
 	cmd := &applyCmd{
 		configFile: cfg,
 		namespace:  "test-ns",
@@ -39,6 +41,9 @@ func TestApplyExecuteSuccess(t *testing.T) {
 		workflowFactory: func(workflows.Opts) (workflowRunner, error) {
 			return runner, nil
 		},
+		stateFactory: func(*rest.Config, string) (state.Store, error) { return store, nil },
+		ensureCRDFn:  func(context.Context, *rest.Config) error { return nil },
+		stateName:    "test-install",
 	}
 
 	status := cmd.Execute(context.Background(), flag.NewFlagSet("apply", flag.ContinueOnError))
@@ -48,6 +53,10 @@ func TestApplyExecuteSuccess(t *testing.T) {
 
 	if !runner.called {
 		t.Fatal("expected workflow runner to be invoked")
+	}
+
+	if !store.saved {
+		t.Fatal("expected installation snapshot to be saved")
 	}
 }
 
@@ -63,6 +72,8 @@ func TestApplyExecuteFailureFromWorkflow(t *testing.T) {
 		applierFactory:  func(*rest.Config) (*applier.Applier, error) { return &applier.Applier{}, nil },
 		deletorFactory:  func(*rest.Config) (*deletor.Deletor, error) { return &deletor.Deletor{}, nil },
 		workflowFactory: func(workflows.Opts) (workflowRunner, error) { return &stubWorkflow{}, nil },
+		stateFactory:    func(*rest.Config, string) (state.Store, error) { return &stubStateStore{}, nil },
+		ensureCRDFn:     func(context.Context, *rest.Config) error { return nil },
 		errEvaluator: func([]workflows.StepResult[any]) error {
 			return cmdErr
 		},
@@ -100,9 +111,22 @@ type stubWorkflow struct {
 	called bool
 }
 
-func (s *stubWorkflow) Run(_ context.Context, spec *types.Workflow, _ func(*types.Step) bool) []workflows.StepResult[any] {
+func (s *stubWorkflow) Run(_ context.Context, spec *types.Workflow, _ func(*types.Step) bool, _ workflows.StepNotifier) []workflows.StepResult[any] {
 	s.called = true
 	return make([]workflows.StepResult[any], len(spec.Steps))
+}
+
+type stubStateStore struct {
+	saved bool
+}
+
+func (s *stubStateStore) Save(_ context.Context, _ string, snapshot *state.Snapshot) error {
+	s.saved = snapshot != nil
+	return nil
+}
+
+func (s *stubStateStore) Load(_ context.Context, _ string) (*state.Snapshot, error) {
+	return nil, nil
 }
 
 func writeApplyConfig(t *testing.T, data string) string {

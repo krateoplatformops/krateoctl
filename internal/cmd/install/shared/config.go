@@ -7,6 +7,12 @@ import (
 	"github.com/krateoplatformops/krateoctl/internal/workflows/types"
 )
 
+const (
+	DefaultConfigPath    = "krateo.yaml"
+	DefaultOverridesPath = "krateo-overrides.yaml"
+	DefaultNamespace     = "krateo-system"
+)
+
 // LoadResult contains the validated configuration and the resolved workflow steps.
 type LoadResult struct {
 	Config        *config.Config

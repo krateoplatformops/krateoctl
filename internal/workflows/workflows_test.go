@@ -13,7 +13,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/e2e-framework/klient/decoder"
 	"sigs.k8s.io/e2e-framework/klient/k8s/resources"
 	"sigs.k8s.io/e2e-framework/pkg/env"
@@ -28,7 +27,6 @@ import (
 	"github.com/krateoplatformops/krateoctl/internal/workflows/types"
 
 	"github.com/krateoplatformops/krateoctl/internal/workflows/steps"
-	"github.com/krateoplatformops/provider-runtime/pkg/logging"
 )
 
 var (
@@ -153,7 +151,7 @@ func TestWorkflowVarOperations(t *testing.T) {
 			}
 
 			workflow.Op(steps.Create)
-			results := workflow.Run(ctx, spec, func(s *types.Step) bool { return false })
+			results := workflow.Run(ctx, spec, func(s *types.Step) bool { return false }, nil)
 
 			if err := Err(results); err != nil {
 				t.Fatalf("Workflow execution failed: %v", err)
@@ -209,7 +207,7 @@ func TestWorkflowVarOperations(t *testing.T) {
 			}
 
 			workflow.Op(steps.Create)
-			results := workflow.Run(ctx, spec, func(s *types.Step) bool { return false })
+			results := workflow.Run(ctx, spec, func(s *types.Step) bool { return false }, nil)
 
 			if err := Err(results); err != nil {
 				t.Fatalf("Workflow execution failed: %v", err)
@@ -252,7 +250,7 @@ func TestWorkflowVarOperations(t *testing.T) {
 			}
 
 			workflow.Op(steps.Create)
-			results := workflow.Run(ctx, spec, func(s *types.Step) bool { return false })
+			results := workflow.Run(ctx, spec, func(s *types.Step) bool { return false }, nil)
 
 			if err := Err(results); err != nil {
 				t.Fatalf("Workflow execution failed: %v", err)
@@ -309,7 +307,7 @@ func TestWorkflowObjectOperations(t *testing.T) {
 			}
 
 			workflow.Op(steps.Create)
-			results := workflow.Run(ctx, spec, func(s *types.Step) bool { return false })
+			results := workflow.Run(ctx, spec, func(s *types.Step) bool { return false }, nil)
 
 			if err := Err(results); err != nil {
 				t.Fatalf("Workflow execution failed: %v", err)
@@ -360,7 +358,7 @@ func TestWorkflowObjectOperations(t *testing.T) {
 			}
 
 			workflow.Op(steps.Update)
-			results := workflow.Run(ctx, spec, func(s *types.Step) bool { return false })
+			results := workflow.Run(ctx, spec, func(s *types.Step) bool { return false }, nil)
 
 			if err := Err(results); err != nil {
 				t.Fatalf("Workflow execution failed: %v", err)
@@ -421,7 +419,7 @@ func TestWorkflowChartOperations(t *testing.T) {
 			}
 
 			workflow.Op(steps.Create)
-			results := workflow.Run(ctx, spec, func(s *types.Step) bool { return false })
+			results := workflow.Run(ctx, spec, func(s *types.Step) bool { return false }, nil)
 
 			// Note: In un vero test e2e, questo potrebbe fallire se non c'è connettività internet
 			// o se il chart repository non è raggiungibile. Potresti voler usare un chart locale.
@@ -454,14 +452,10 @@ func createTestWorkflow(cfg *envconf.Config) (*Workflow, error) {
 		return nil, fmt.Errorf("failed to create dynamic deletor: %w", err)
 	}
 
-	zl := zap.New(zap.UseDevMode(true))
-	log := logging.NewLogrLogger(zl.WithName("workflow-test"))
-
 	return New(Opts{
 		Getter:    getter,
 		Applier:   applier,
 		Deletor:   deletor,
-		Log:       log,
 		Namespace: namespace,
 		Cfg:       cfg.Client().RESTConfig(),
 	})

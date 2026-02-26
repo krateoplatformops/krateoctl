@@ -65,7 +65,7 @@ type ChartSpec struct {
 	WaitTimeout *metav1.Duration `json:"waitTimeout,omitempty"`
 
 	// Values defines the Helm values
-	Values map[string]any `json:"values,omitempty"`
+	Values map[string]any `json:"values,omitempty" yaml:"values,omitempty"`
 
 	// InsecureSkipTLSVerify skips tls certificate checks for the chart download
 	InsecureSkipTLSVerify bool `json:"insecureSkipTLSVerify,omitempty"`
