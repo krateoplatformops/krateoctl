@@ -151,7 +151,7 @@ func parseSet(raw any) (map[string]any, error) {
 		}
 
 		key, _ := entryMap["name"].(string)
-		if key == "" {
+		if key == "" || !isValidKey(key) {
 			continue
 		}
 		assignNested(result, key, entryMap["value"])
@@ -162,6 +162,19 @@ func parseSet(raw any) (map[string]any, error) {
 	}
 
 	return result, nil
+}
+
+// isValidKey checks if a key is valid for migration (not empty, not just brackets, etc.)
+func isValidKey(key string) bool {
+	// Skip keys that are just "map[]" or similar meaningless entries
+	if key == "map[]" || key == "[]" {
+		return false
+	}
+	// Skip keys that contain [] without a proper field name (e.g., just brackets)
+	if strings.HasPrefix(key, "[]") || strings.HasSuffix(key, "[]") && !strings.Contains(strings.TrimSuffix(key, "[]"), ".") {
+		return false
+	}
+	return true
 }
 
 func assignNested(target map[string]any, dottedKey string, value any) {

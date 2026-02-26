@@ -369,25 +369,29 @@ func (c *Config) applyComponentOverrides(steps []*types.Step) error {
 		}
 		withData := *step.With
 
-		stepValues := ensureMap(withData, "values")
-
 		defaultValues, defaultWith, err := splitDefaults(defaultsSrc, componentName)
 		if err != nil {
 			return err
-		}
-		if len(defaultValues) > 0 {
-			stepValues = mergeConfigs(stepValues, defaultValues)
-		}
-		if len(defaultWith) > 0 {
-			withData = mergeConfigs(withData, defaultWith)
 		}
 
 		stepSpecificValues, stepSpecificWith, err := parseStepOverrides(stepConfigSrc, componentName, step.ID)
 		if err != nil {
 			return err
 		}
-		if len(stepSpecificValues) > 0 {
-			stepValues = mergeConfigs(stepValues, stepSpecificValues)
+
+		// Only create values map if we actually have values to merge
+		if len(defaultValues) > 0 || len(stepSpecificValues) > 0 {
+			stepValues := ensureMap(withData, "values")
+			if len(defaultValues) > 0 {
+				stepValues = mergeConfigs(stepValues, defaultValues)
+			}
+			if len(stepSpecificValues) > 0 {
+				stepValues = mergeConfigs(stepValues, stepSpecificValues)
+			}
+		}
+
+		if len(defaultWith) > 0 {
+			withData = mergeConfigs(withData, defaultWith)
 		}
 		if len(stepSpecificWith) > 0 {
 			withData = mergeConfigs(withData, stepSpecificWith)

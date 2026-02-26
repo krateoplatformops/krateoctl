@@ -8,31 +8,19 @@
 # Use these names in krateo-overrides.yaml for component-level configuration.
 # ============================================================================
 componentsDefinition:
-  config:
-    description: "Configuration and secrets"
+  backend:
+    description: "Core backend services (API, controllers, composition engine)"
     steps:
       - create-jwt-sign-key
-
-  authn:
-    description: "Authentication and authorization service"
-    steps:
       - install-authn
       - extract-authn-port
-
-  snowplow:
-    description: "Event tracking and telemetry service"
-    steps:
       - install-snowplow
       - extract-snowplow-port
 
-  eventrouter:
-    description: "Event routing service"
+  eventstack:
+    description: "Event streaming and storage stack (EventRouter + EventSSE)"
     steps:
       - install-eventrouter
-
-  eventsse:
-    description: "Event streaming and storage engine"
-    steps:
       - install-eventsse-etcd
       - install-eventsse
       - extract-eventsse-port
@@ -44,23 +32,23 @@ componentsDefinition:
     steps:
       - install-frontend
 
-  portal:
+  portal-defaults:
     description: "Portal starter template"
     steps:
       - install-portal
 
-  core-provider:
+  composable-operations:
     description: "Core composition and orchestration engine"
     steps:
       - install-core-provider
 
-  oasgen-provider:
+  operator-generator:
     description: "OpenAPI schema generation provider"
     steps:
       - install-oasgen-provider
 
   finops:
-    description: "Cost management and FinOps analytics (optional)"
+    description: "Cost management and FinOps analytics (optional) and OPA Gatekeeper for policy enforcement (optional)"
     steps:
       - install-finops-cratedb
       - install-finops-operator-exporter
@@ -71,10 +59,6 @@ componentsDefinition:
       - install-finops-notebooks
       - install-finops-composition-definition-parser
       - install-finops-operator-scraper
-
-  opa:
-    description: "Policy engine for governance and compliance"
-    steps:
       - install-opa
 
 # ============================================================================

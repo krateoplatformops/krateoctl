@@ -84,3 +84,60 @@ spec:
 		t.Fatalf("stringData not converted: %v", stringData)
 	}
 }
+
+func TestFilterMeaninglessKeys(t *testing.T) {
+	legacyYAML := `
+apiVersion: krateo.io/v1alpha1
+kind: KrateoPlatformOps
+spec:
+  steps:
+  - id: install-chart
+    type: chart
+    with:
+      name: example
+      repository: https://charts.example.io
+      set:
+      - name: image.repository
+        value: ghcr.io/example/image
+      - name: map[]
+      - name: service.port
+        value: "8080"
+      version: 1.0.0
+`
+
+	var obj map[string]any
+	if err := yaml.Unmarshal([]byte(legacyYAML), &obj); err != nil {
+		t.Fatalf("unmarshal legacy yaml: %v", err)
+	}
+
+	doc, err := ConvertDocument(obj, "default")
+	if err != nil {
+		t.Fatalf("ConvertDocument() error = %v", err)
+	}
+
+	if len(doc.Steps) != 1 {
+		t.Fatalf("expected 1 step, got %d", len(doc.Steps))
+	}
+
+	chart := doc.Steps[0]
+	values, ok := chart.With["values"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected values map")
+	}
+
+	// Verify that map[] was filtered out
+	if _, hasMapKey := values["map[]"]; hasMapKey {
+		t.Fatalf("meaningless 'map[]' key should have been filtered out, got values: %v", values)
+	}
+
+	// Verify that valid keys are still present
+	image, _ := values["image"].(map[string]any)
+	if image["repository"].(string) != "ghcr.io/example/image" {
+		t.Fatalf("valid key was incorrectly filtered: %v", image)
+	}
+
+	service, _ := values["service"].(map[string]any)
+	if service["port"].(string) != "8080" {
+		t.Fatalf("valid key was incorrectly filtered: %v", service)
+	}
+}
