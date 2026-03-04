@@ -97,9 +97,9 @@ func (c *applyCmd) Usage() string {
 	fmt.Fprintf(&wri, "%s. Load the installation config and execute the workflow.\n\n", c.Synopsis())
 	fmt.Fprint(&wri, "USAGE:\n  krateoctl install apply [FLAGS]\n\n")
 	fmt.Fprint(&wri, "FLAGS:\n")
-	fmt.Fprintf(&wri, "  -config string      path to config (default \"%s\")\n", shared.DefaultConfigPath)
-	fmt.Fprintf(&wri, "  -namespace string   target namespace (default \"%s\")\n", shared.DefaultNamespace)
-	fmt.Fprint(&wri, "  -profile string     optional override profile\n")
+	fmt.Fprintf(&wri, "  --config string      path to config (default \"%s\")\n", shared.DefaultConfigPath)
+	fmt.Fprintf(&wri, "  --namespace string   target namespace (default \"%s\")\n", shared.DefaultNamespace)
+	fmt.Fprint(&wri, "  --profile string     optional override profile (e.g. dev, prod)\n")
 	return wri.String()
 }
 

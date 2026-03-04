@@ -66,10 +66,10 @@ func (c *migrateCmd) Usage() string {
 	buf.WriteString("\n\nUSAGE:\n\n")
 	buf.WriteString("  krateoctl install migrate [FLAGS]\n\n")
 	buf.WriteString("FLAGS:\n\n")
-	fmt.Fprintf(buf, "  -namespace string\n        namespace that contains the KrateoPlatformOps resource (default \"%s\")\n", shared.DefaultNamespace)
-	buf.WriteString("  -name string\n        name of the KrateoPlatformOps resource (default \"krateo\")\n")
-	fmt.Fprintf(buf, "  -output string\n        path to write the generated krateo.yaml (default \"%s\")\n", shared.DefaultConfigPath)
-	buf.WriteString("  -force\n        overwrite the output file if it already exists\n")
+	fmt.Fprintf(buf, "  --namespace string\n        namespace that contains the KrateoPlatformOps resource (default \"%s\")\n", shared.DefaultNamespace)
+	buf.WriteString("  --name string\n        name of the KrateoPlatformOps resource (default \"krateo\")\n")
+	fmt.Fprintf(buf, "  --output string\n        path to write the generated krateo.yaml (default \"%s\")\n", shared.DefaultConfigPath)
+	buf.WriteString("  --force\n        overwrite the output file if it already exists\n")
 
 	return buf.String()
 }

@@ -47,13 +47,13 @@ func (c *planCmd) Usage() string {
 	fmt.Fprint(&wri, "  krateoctl install plan [FLAGS]\n\n")
 
 	fmt.Fprint(&wri, "FLAGS:\n\n")
-	fmt.Fprint(&wri, "  -config string\n")
+	fmt.Fprint(&wri, "  --config string\n")
 	fmt.Fprintf(&wri, "        path to installation configuration file (default \"%s\")\n", shared.DefaultConfigPath)
-	fmt.Fprint(&wri, "  -profile string\n")
-	fmt.Fprint(&wri, "        optional profile name defined in krateo-overrides.yaml (e.g. dev, prod)\n")
-	fmt.Fprint(&wri, "  -namespace string\n")
+	fmt.Fprint(&wri, "  --profile string\n")
+	fmt.Fprint(&wri, "        optional override profile (e.g. dev, prod)\n")
+	fmt.Fprint(&wri, "  --namespace string\n")
 	fmt.Fprintf(&wri, "        namespace where the installation snapshot is stored (default \"%s\")\n", shared.DefaultNamespace)
-	fmt.Fprint(&wri, "  -diff-installed\n")
+	fmt.Fprint(&wri, "  --diff-installed\n")
 	fmt.Fprint(&wri, "        compare computed plan against the stored installation snapshot\n\n")
 
 	fmt.Fprint(&wri, "CONVENTIONS:\n\n")
@@ -69,7 +69,7 @@ func (c *planCmd) Usage() string {
 	fmt.Fprint(&wri, "  # Preview all steps using the default config file\n")
 	fmt.Fprint(&wri, "  krateoctl install plan\n\n")
 	fmt.Fprint(&wri, "  # Preview steps for the 'dev' profile and save the plan\n")
-	fmt.Fprint(&wri, "  krateoctl install plan -profile dev > plan.yaml\n\n")
+	fmt.Fprint(&wri, "  krateoctl install plan --profile dev > plan.yaml\n\n")
 
 	return wri.String()
 }
