@@ -105,7 +105,7 @@ func (c *migrateCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ...any) sub
 	c.ensureDeps()
 
 	logLevel := ui.LevelInfo
-	if os.Getenv("KRATEO_DEBUG") != "" {
+	if os.Getenv(shared.KRATEOCTL_DEBUG_ENV) != "" {
 		logLevel = ui.LevelDebug
 	}
 	logger := ui.NewLogger(os.Stderr, logLevel)
