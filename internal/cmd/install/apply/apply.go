@@ -43,6 +43,7 @@ type applyCmd struct {
 	profile    string
 	version    string
 	repository string
+	debug      bool
 
 	restConfigFn    restConfigProvider
 	getterFactory   getterFactory
@@ -103,7 +104,8 @@ func (c *applyCmd) Usage() string {
 	fmt.Fprint(&wri, "  --repository string   GitHub repository URL for releases (default \"https://github.com/krateoplatformops/releases\")\n")
 	fmt.Fprintf(&wri, "  --config string       path to local configuration file (default \"%s\", used when --version is not set)\n", shared.DefaultConfigPath)
 	fmt.Fprintf(&wri, "  --namespace string    target namespace (default \"%s\")\n", shared.DefaultNamespace)
-	fmt.Fprint(&wri, "  --profile string      optional profile name (e.g. dev, prod)\n\n")
+	fmt.Fprint(&wri, "  --profile string      optional profile name (e.g. dev, prod)\n")
+	fmt.Fprint(&wri, "  --debug               enable debug-level logging (can also use KRATEOCTL_DEBUG env var)\n\n")
 	fmt.Fprint(&wri, "MODES:\n\n")
 	fmt.Fprint(&wri, "  Remote mode: When --version is specified, config is fetched from the releases\n")
 	fmt.Fprint(&wri, "               repository instead of local filesystem.\n")
@@ -124,13 +126,15 @@ func (c *applyCmd) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.configFile, "config", shared.DefaultConfigPath, "path to local configuration file")
 	f.StringVar(&c.namespace, "namespace", shared.DefaultNamespace, "kubernetes namespace for deployment")
 	f.StringVar(&c.profile, "profile", "", "optional profile name")
+	f.BoolVar(&c.debug, "debug", false, "enable debug-level logging")
 }
 
 func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
 	c.ensureDeps()
 
 	// 1. Initialize UI and Logging
-	debugMode := os.Getenv(shared.KRATEOCTL_DEBUG_ENV) != ""
+	// Enable debug mode from flag or environment variable
+	debugMode := c.debug || os.Getenv(shared.KRATEOCTL_DEBUG_ENV) != ""
 	logLevel := ui.LevelInfo
 	if debugMode {
 		logLevel = ui.LevelDebug

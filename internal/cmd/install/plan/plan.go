@@ -33,6 +33,7 @@ type planCmd struct {
 	diffInstalled bool
 	version       string
 	repository    string
+	debug         bool
 	restConfigFn  restConfigProvider
 	stateFactory  stateStoreFactory
 	stateName     string
@@ -60,7 +61,9 @@ func (c *planCmd) Usage() string {
 	fmt.Fprint(&wri, "  --namespace string\n")
 	fmt.Fprintf(&wri, "        namespace where the installation snapshot is stored (default \"%s\")\n", shared.DefaultNamespace)
 	fmt.Fprint(&wri, "  --diff-installed\n")
-	fmt.Fprint(&wri, "        compare computed plan against the stored installation snapshot\n\n")
+	fmt.Fprint(&wri, "        compare computed plan against the stored installation snapshot\n")
+	fmt.Fprint(&wri, "  --debug\n")
+	fmt.Fprint(&wri, "        enable debug-level logging (can also use KRATEOCTL_DEBUG env var)\n\n")
 
 	fmt.Fprint(&wri, "MODES:\n\n")
 	fmt.Fprint(&wri, "  Remote mode: When --version is specified, config is fetched from the releases\n")
@@ -95,6 +98,7 @@ func (c *planCmd) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.profile, "profile", "", "optional profile name")
 	f.StringVar(&c.namespace, "namespace", shared.DefaultNamespace, "kubernetes namespace where the installation snapshot is stored")
 	f.BoolVar(&c.diffInstalled, "diff-installed", false, "compare the computed plan with the stored installation snapshot")
+	f.BoolVar(&c.debug, "debug", false, "enable debug-level logging")
 }
 
 func (c *planCmd) ensureDeps() {
@@ -117,7 +121,8 @@ func (c *planCmd) ensureDeps() {
 func (c *planCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
 	c.ensureDeps()
 
-	debugMode := os.Getenv(shared.KRATEOCTL_DEBUG_ENV) != ""
+	// Enable debug mode from flag or environment variable
+	debugMode := c.debug || os.Getenv(shared.KRATEOCTL_DEBUG_ENV) != ""
 	logLevel := ui.LevelInfo
 	if debugMode {
 		logLevel = ui.LevelDebug

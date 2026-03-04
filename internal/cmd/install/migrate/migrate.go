@@ -49,6 +49,7 @@ type migrateCmd struct {
 	namespace  string
 	outputPath string
 	force      bool
+	debug      bool
 
 	restConfigFn   restConfigProvider
 	dynamicFactory dynamicFactory
@@ -70,6 +71,7 @@ func (c *migrateCmd) Usage() string {
 	buf.WriteString("  --name string\n        name of the KrateoPlatformOps resource (default \"krateo\")\n")
 	fmt.Fprintf(buf, "  --output string\n        path to write the generated krateo.yaml (default \"%s\")\n", shared.DefaultConfigPath)
 	buf.WriteString("  --force\n        overwrite the output file if it already exists\n")
+	buf.WriteString("  --debug\n        enable debug-level logging (can also use KRATEOCTL_DEBUG env var)\n")
 
 	return buf.String()
 }
@@ -79,6 +81,7 @@ func (c *migrateCmd) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.name, "name", "krateo", "name of the KrateoPlatformOps resource")
 	f.StringVar(&c.outputPath, "output", shared.DefaultConfigPath, "path to write the generated krateo.yaml")
 	f.BoolVar(&c.force, "force", false, "overwrite the output file if it already exists")
+	f.BoolVar(&c.debug, "debug", false, "enable debug-level logging")
 }
 
 func (c *migrateCmd) ensureDeps() {
@@ -104,8 +107,9 @@ func (c *migrateCmd) ensureDeps() {
 func (c *migrateCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	c.ensureDeps()
 
+	// Enable debug mode from flag or environment variable
 	logLevel := ui.LevelInfo
-	if os.Getenv(shared.KRATEOCTL_DEBUG_ENV) != "" {
+	if c.debug || os.Getenv(shared.KRATEOCTL_DEBUG_ENV) != "" {
 		logLevel = ui.LevelDebug
 	}
 	logger := ui.NewLogger(os.Stderr, logLevel)
