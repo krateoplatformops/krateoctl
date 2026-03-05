@@ -225,7 +225,7 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 		if err := installationStore.Save(ctx, c.stateName, snapshot); err != nil {
 			l.Warn("⚠ Unable to persist installation snapshot: %v", err)
 		} else {
-			l.Info("✓ Installation snapshot saved as %q", c.stateName)
+			l.Info("✓ Installation snapshot saved as %q with apiVersion %q and kind %q in the namespace %q", c.stateName, "krateo.io/v1", "Installation", c.namespace)
 		}
 	}
 
