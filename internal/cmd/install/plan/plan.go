@@ -31,6 +31,9 @@ type planCmd struct {
 	profile       string
 	namespace     string
 	diffInstalled bool
+	version       string
+	repository    string
+	debug         bool
 	restConfigFn  restConfigProvider
 	stateFactory  stateStoreFactory
 	stateName     string
@@ -47,18 +50,28 @@ func (c *planCmd) Usage() string {
 	fmt.Fprint(&wri, "  krateoctl install plan [FLAGS]\n\n")
 
 	fmt.Fprint(&wri, "FLAGS:\n\n")
-	fmt.Fprint(&wri, "  -config string\n")
-	fmt.Fprintf(&wri, "        path to installation configuration file (default \"%s\")\n", shared.DefaultConfigPath)
-	fmt.Fprint(&wri, "  -profile string\n")
-	fmt.Fprint(&wri, "        optional profile name defined in krateo-overrides.yaml (e.g. dev, prod)\n")
-	fmt.Fprint(&wri, "  -namespace string\n")
+	fmt.Fprint(&wri, "  --version string\n")
+	fmt.Fprint(&wri, "        version/tag to fetch from the releases repository (enables remote mode)\n")
+	fmt.Fprint(&wri, "  --repository string\n")
+	fmt.Fprint(&wri, "        GitHub repository URL for releases (default \"https://github.com/krateoplatformops/releases\")\n")
+	fmt.Fprint(&wri, "  --config string\n")
+	fmt.Fprintf(&wri, "        path to local configuration file (default \"%s\", used when --version is not set)\n", shared.DefaultConfigPath)
+	fmt.Fprint(&wri, "  --profile string\n")
+	fmt.Fprint(&wri, "        optional profile name (e.g. dev, prod)\n")
+	fmt.Fprint(&wri, "  --namespace string\n")
 	fmt.Fprintf(&wri, "        namespace where the installation snapshot is stored (default \"%s\")\n", shared.DefaultNamespace)
-	fmt.Fprint(&wri, "  -diff-installed\n")
-	fmt.Fprint(&wri, "        compare computed plan against the stored installation snapshot\n\n")
+	fmt.Fprint(&wri, "  --diff-installed\n")
+	fmt.Fprint(&wri, "        compare computed plan against the stored installation snapshot\n")
+	fmt.Fprint(&wri, "  --debug\n")
+	fmt.Fprint(&wri, "        enable debug-level logging (can also use KRATEOCTL_DEBUG env var)\n\n")
 
+	fmt.Fprint(&wri, "MODES:\n\n")
+	fmt.Fprint(&wri, "  Remote mode: When --version is specified, config is fetched from the releases\n")
+	fmt.Fprint(&wri, "               repository instead of local filesystem.\n")
+	fmt.Fprint(&wri, "  Local mode:  When --version is not specified, config is read from local files.\n\n")
 	fmt.Fprint(&wri, "CONVENTIONS:\n\n")
-	fmt.Fprint(&wri, "  - Main config is read from krateo.yaml (overridable with -config).\n")
-	fmt.Fprint(&wri, "  - Overrides are loaded from krateo-overrides.yaml and, when -profile is set, from\n")
+	fmt.Fprint(&wri, "  - Main config is read from krateo.yaml (overridable with --config in local mode).\n")
+	fmt.Fprint(&wri, "  - Overrides are loaded from krateo-overrides.yaml and, when --profile is set, from\n")
 	fmt.Fprint(&wri, "    profile-specific files like krateo-overrides.<profile>.yaml.\n")
 	fmt.Fprint(&wri, "  - Components and steps are filtered according to the active profile; disabled steps\n")
 	fmt.Fprint(&wri, "    are still shown but include 'skip: true' in the output.\n")
@@ -66,19 +79,26 @@ func (c *planCmd) Usage() string {
 	fmt.Fprint(&wri, "    optional 'skip', and a 'with' section with the resolved step configuration.\n\n")
 
 	fmt.Fprint(&wri, "EXAMPLES:\n\n")
-	fmt.Fprint(&wri, "  # Preview all steps using the default config file\n")
-	fmt.Fprint(&wri, "  krateoctl install plan\n\n")
-	fmt.Fprint(&wri, "  # Preview steps for the 'dev' profile and save the plan\n")
-	fmt.Fprint(&wri, "  krateoctl install plan -profile dev > plan.yaml\n\n")
+	fmt.Fprint(&wri, "  # Preview from a specific release version (remote mode)\n")
+	fmt.Fprint(&wri, "  krateoctl install plan --version v1.0.0\n\n")
+	fmt.Fprint(&wri, "  # Preview from a custom repository\n")
+	fmt.Fprint(&wri, "  krateoctl install plan --version v1.0.0 --repository https://github.com/myorg/krateo-releases\n\n")
+	fmt.Fprint(&wri, "  # Preview using local config file\n")
+	fmt.Fprint(&wri, "  krateoctl install plan --config ./my-krateo.yaml\n\n")
+	fmt.Fprint(&wri, "  # Preview with a profile\n")
+	fmt.Fprint(&wri, "  krateoctl install plan --version v1.0.0 --profile dev > plan.yaml\n\n")
 
 	return wri.String()
 }
 
 func (c *planCmd) SetFlags(f *flag.FlagSet) {
-	f.StringVar(&c.configFile, "config", shared.DefaultConfigPath, "path to configuration file")
-	f.StringVar(&c.profile, "profile", "", "optional profile name defined in krateo-overrides.yaml")
+	f.StringVar(&c.version, "version", "", "version/tag to fetch from the releases repository")
+	f.StringVar(&c.repository, "repository", "", "GitHub repository URL for releases")
+	f.StringVar(&c.configFile, "config", shared.DefaultConfigPath, "path to local configuration file")
+	f.StringVar(&c.profile, "profile", "", "optional profile name")
 	f.StringVar(&c.namespace, "namespace", shared.DefaultNamespace, "kubernetes namespace where the installation snapshot is stored")
 	f.BoolVar(&c.diffInstalled, "diff-installed", false, "compare the computed plan with the stored installation snapshot")
+	f.BoolVar(&c.debug, "debug", false, "enable debug-level logging")
 }
 
 func (c *planCmd) ensureDeps() {
@@ -101,7 +121,8 @@ func (c *planCmd) ensureDeps() {
 func (c *planCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
 	c.ensureDeps()
 
-	debugMode := os.Getenv("KRATEO_DEBUG") != "" || c.profile == "debug"
+	// Enable debug mode from flag or environment variable
+	debugMode := c.debug || os.Getenv(shared.KRATEOCTL_DEBUG_ENV) != ""
 	logLevel := ui.LevelInfo
 	if debugMode {
 		logLevel = ui.LevelDebug
@@ -112,6 +133,8 @@ func (c *planCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{
 		ConfigPath:        c.configFile,
 		UserOverridesPath: shared.DefaultOverridesPath,
 		Profile:           c.profile,
+		Version:           c.version,
+		Repository:        c.repository,
 	})
 	if err != nil {
 		l.Error("Failed to load configuration: %v", err)

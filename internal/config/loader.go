@@ -6,17 +6,22 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/krateoplatformops/krateoctl/internal/util/remote"
 	"gopkg.in/yaml.v3"
 )
 
 // LoadOptions configures how configuration is loaded.
 type LoadOptions struct {
-	// ConfigPath is the path to the main krateo.yaml
+	// ConfigPath is the path to the main krateo.yaml (used for local mode)
 	ConfigPath string
 	// UserOverridesPath is the path to krateo-overrides.yaml (optional)
 	UserOverridesPath string
 	// Profile is the optional name of a profile to apply from overrides
 	Profile string
+	// Repository is the GitHub repository URL to fetch config from (remote mode)
+	Repository string
+	// Version is the git tag/version to fetch from the repository (remote mode)
+	Version string
 }
 
 // Loader handles loading configuration from files.
@@ -32,7 +37,12 @@ func NewLoader(opts LoadOptions) *Loader {
 // Load reads and parses configuration from krateo.yaml and optional overrides.
 // Returns a map[string]any representing the merged configuration.
 func (l *Loader) Load() (map[string]any, error) {
-	// Load main config file
+	// Check if we're in remote mode (version specified)
+	if remote.IsRemoteSource(l.opts.Version) {
+		return l.loadRemote()
+	}
+
+	// Local mode: Load main config file from filesystem
 	config, err := l.loadFile(l.opts.ConfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config from %s: %w", l.opts.ConfigPath, err)
@@ -134,6 +144,107 @@ func (l *Loader) Load() (map[string]any, error) {
 	}
 
 	return config, nil
+}
+
+// loadRemote fetches configuration from a remote GitHub repository.
+func (l *Loader) loadRemote() (map[string]any, error) {
+	repo := l.opts.Repository
+	if repo == "" {
+		repo = remote.DefaultRepository
+	}
+
+	// Fetch the main config file from the remote repository
+	config, err := l.loadRemoteFile(repo, l.opts.Version, "krateo.yaml")
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config from %s@%s: %w", repo, l.opts.Version, err)
+	}
+
+	// Try to fetch overrides file (optional)
+	baseOverrides, err := l.loadRemoteFile(repo, l.opts.Version, "krateo-overrides.yaml")
+	if err != nil {
+		// Overrides are optional, so we just skip if not found
+		baseOverrides = make(map[string]any)
+	}
+
+	// Determine effective profile list
+	profileStr := strings.TrimSpace(l.opts.Profile)
+	if profileStr == "" {
+		if v, ok := baseOverrides["profile"].(string); ok {
+			profileStr = v
+		}
+	}
+	profiles := parseProfiles(profileStr)
+
+	// Collect profile-specific overrides
+	profileOverrides := make(map[string]any)
+
+	if len(profiles) > 0 {
+		// Try to fetch profile-specific override files
+		for _, p := range profiles {
+			profFile := fmt.Sprintf("krateo-overrides.%s.yaml", p)
+			profData, err := l.loadRemoteFile(repo, l.opts.Version, profFile)
+			if err == nil {
+				profileOverrides = mergeConfigs(profileOverrides, profData)
+			}
+			// If profile file doesn't exist, that's okay, continue
+		}
+
+		// Check for in-file profiles defined inside base overrides
+		if profilesRaw, ok := baseOverrides["profiles"]; ok {
+			profMap, ok := profilesRaw.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("profiles must be a mapping, got %T", profilesRaw)
+			}
+
+			for _, p := range profiles {
+				entryRaw, ok := profMap[p]
+				if !ok {
+					return nil, fmt.Errorf("profile %q not found in overrides", p)
+				}
+
+				entryMap, ok := entryRaw.(map[string]any)
+				if !ok {
+					return nil, fmt.Errorf("profile %q must be a mapping, got %T", p, entryRaw)
+				}
+
+				profileOverrides = mergeConfigs(profileOverrides, entryMap)
+			}
+		}
+	}
+
+	// Remove profile metadata
+	delete(baseOverrides, "profiles")
+	delete(baseOverrides, "profile")
+
+	// Merge configurations
+	if len(profileOverrides) > 0 {
+		config = mergeConfigs(config, profileOverrides)
+	}
+	if len(baseOverrides) > 0 {
+		config = mergeConfigs(config, baseOverrides)
+	}
+
+	return config, nil
+}
+
+// loadRemoteFile fetches a file from a remote repository and parses it as YAML.
+func (l *Loader) loadRemoteFile(repo, version, filename string) (map[string]any, error) {
+	fetcher := remote.NewFetcher()
+	content, err := fetcher.FetchFile(remote.FetchOptions{
+		Repository: repo,
+		Version:    version,
+		Filename:   filename,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var data map[string]any
+	if err := yaml.Unmarshal(content, &data); err != nil {
+		return nil, fmt.Errorf("failed to parse YAML from %s: %w", filename, err)
+	}
+
+	return data, nil
 }
 
 // loadFile reads and parses a YAML file into a map.

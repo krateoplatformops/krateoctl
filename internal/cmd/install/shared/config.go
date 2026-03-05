@@ -11,6 +11,8 @@ const (
 	DefaultConfigPath    = "krateo.yaml"
 	DefaultOverridesPath = "krateo-overrides.yaml"
 	DefaultNamespace     = "krateo-system"
+
+	KRATEOCTL_DEBUG_ENV = "KRATEOCTL_DEBUG"
 )
 
 // LoadResult contains the validated configuration and the resolved workflow steps.

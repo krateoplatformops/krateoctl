@@ -41,6 +41,9 @@ type applyCmd struct {
 	configFile string
 	namespace  string
 	profile    string
+	version    string
+	repository string
+	debug      bool
 
 	restConfigFn    restConfigProvider
 	getterFactory   getterFactory
@@ -97,23 +100,41 @@ func (c *applyCmd) Usage() string {
 	fmt.Fprintf(&wri, "%s. Load the installation config and execute the workflow.\n\n", c.Synopsis())
 	fmt.Fprint(&wri, "USAGE:\n  krateoctl install apply [FLAGS]\n\n")
 	fmt.Fprint(&wri, "FLAGS:\n")
-	fmt.Fprintf(&wri, "  -config string      path to config (default \"%s\")\n", shared.DefaultConfigPath)
-	fmt.Fprintf(&wri, "  -namespace string   target namespace (default \"%s\")\n", shared.DefaultNamespace)
-	fmt.Fprint(&wri, "  -profile string     optional override profile\n")
+	fmt.Fprint(&wri, "  --version string      version/tag to fetch from the releases repository (enables remote mode)\n")
+	fmt.Fprint(&wri, "  --repository string   GitHub repository URL for releases (default \"https://github.com/krateoplatformops/releases\")\n")
+	fmt.Fprintf(&wri, "  --config string       path to local configuration file (default \"%s\", used when --version is not set)\n", shared.DefaultConfigPath)
+	fmt.Fprintf(&wri, "  --namespace string    target namespace (default \"%s\")\n", shared.DefaultNamespace)
+	fmt.Fprint(&wri, "  --profile string      optional profile name (e.g. dev, prod)\n")
+	fmt.Fprint(&wri, "  --debug               enable debug-level logging (can also use KRATEOCTL_DEBUG env var)\n\n")
+	fmt.Fprint(&wri, "MODES:\n\n")
+	fmt.Fprint(&wri, "  Remote mode: When --version is specified, config is fetched from the releases\n")
+	fmt.Fprint(&wri, "               repository instead of local filesystem.\n")
+	fmt.Fprint(&wri, "  Local mode:  When --version is not specified, config is read from local files.\n\n")
+	fmt.Fprint(&wri, "EXAMPLES:\n\n")
+	fmt.Fprint(&wri, "  # Apply from a specific release version (remote mode)\n")
+	fmt.Fprint(&wri, "  krateoctl install apply --version v1.0.0\n\n")
+	fmt.Fprint(&wri, "  # Apply from a custom repository\n")
+	fmt.Fprint(&wri, "  krateoctl install apply --version v1.0.0 --repository https://github.com/myorg/krateo-releases\n\n")
+	fmt.Fprint(&wri, "  # Apply using local config file\n")
+	fmt.Fprint(&wri, "  krateoctl install apply --config ./my-krateo.yaml\n\n")
 	return wri.String()
 }
 
 func (c *applyCmd) SetFlags(f *flag.FlagSet) {
-	f.StringVar(&c.configFile, "config", shared.DefaultConfigPath, "path to configuration file")
+	f.StringVar(&c.version, "version", "", "version/tag to fetch from the releases repository")
+	f.StringVar(&c.repository, "repository", "", "GitHub repository URL for releases")
+	f.StringVar(&c.configFile, "config", shared.DefaultConfigPath, "path to local configuration file")
 	f.StringVar(&c.namespace, "namespace", shared.DefaultNamespace, "kubernetes namespace for deployment")
 	f.StringVar(&c.profile, "profile", "", "optional profile name")
+	f.BoolVar(&c.debug, "debug", false, "enable debug-level logging")
 }
 
 func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
 	c.ensureDeps()
 
 	// 1. Initialize UI and Logging
-	debugMode := os.Getenv("KRATEO_DEBUG") != "" || c.profile == "debug"
+	// Enable debug mode from flag or environment variable
+	debugMode := c.debug || os.Getenv(shared.KRATEOCTL_DEBUG_ENV) != ""
 	logLevel := ui.LevelInfo
 	if debugMode {
 		logLevel = ui.LevelDebug
@@ -130,6 +151,8 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 		ConfigPath:        c.configFile,
 		UserOverridesPath: shared.DefaultOverridesPath,
 		Profile:           c.profile,
+		Version:           c.version,
+		Repository:        c.repository,
 	})
 	if err != nil {
 		l.Error("Failed to load configuration: %v", err)
