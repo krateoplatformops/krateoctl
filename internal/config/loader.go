@@ -159,11 +159,19 @@ func (l *Loader) loadRemote() (map[string]any, error) {
 		return nil, fmt.Errorf("failed to load config from %s@%s: %w", repo, l.opts.Version, err)
 	}
 
-	// Try to fetch overrides file (optional)
+	// Try to fetch overrides file (optional), fallback to local if not found remotely
 	baseOverrides, err := l.loadRemoteFile(repo, l.opts.Version, "krateo-overrides.yaml")
 	if err != nil {
-		// Overrides are optional, so we just skip if not found
+		// Try to load from local filesystem as fallback
 		baseOverrides = make(map[string]any)
+		if l.opts.UserOverridesPath != "" {
+			if fi, err := os.Stat(l.opts.UserOverridesPath); err == nil && !fi.IsDir() {
+				baseOverrides, err = l.loadFile(l.opts.UserOverridesPath)
+				if err != nil {
+					return nil, fmt.Errorf("failed to load local overrides from %s: %w", l.opts.UserOverridesPath, err)
+				}
+			}
+		}
 	}
 
 	// Determine effective profile list
@@ -179,14 +187,30 @@ func (l *Loader) loadRemote() (map[string]any, error) {
 	profileOverrides := make(map[string]any)
 
 	if len(profiles) > 0 {
-		// Try to fetch profile-specific override files
+		// Try to fetch profile-specific override files, fallback to local if not found remotely
 		for _, p := range profiles {
 			profFile := fmt.Sprintf("krateo-overrides.%s.yaml", p)
+
+			// Try remote first
 			profData, err := l.loadRemoteFile(repo, l.opts.Version, profFile)
 			if err == nil {
 				profileOverrides = mergeConfigs(profileOverrides, profData)
+				continue
 			}
-			// If profile file doesn't exist, that's okay, continue
+
+			// Fallback to local if UserOverridesPath is specified
+			if l.opts.UserOverridesPath != "" {
+				dir := filepath.Dir(l.opts.UserOverridesPath)
+				localPath := filepath.Join(dir, profFile)
+
+				if fi, err := os.Stat(localPath); err == nil && !fi.IsDir() {
+					profData, err = l.loadFile(localPath)
+					if err != nil {
+						return nil, fmt.Errorf("failed to load local profile overrides from %s: %w", localPath, err)
+					}
+					profileOverrides = mergeConfigs(profileOverrides, profData)
+				}
+			}
 		}
 
 		// Check for in-file profiles defined inside base overrides
