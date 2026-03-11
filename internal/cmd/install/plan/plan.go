@@ -27,16 +27,17 @@ type restConfigProvider func() (*rest.Config, error)
 type stateStoreFactory func(*rest.Config, string) (state.Store, error)
 
 type planCmd struct {
-	configFile    string
-	profile       string
-	namespace     string
-	diffInstalled bool
-	version       string
-	repository    string
-	debug         bool
-	restConfigFn  restConfigProvider
-	stateFactory  stateStoreFactory
-	stateName     string
+	configFile     string
+	profile        string
+	namespace      string
+	diffInstalled  bool
+	version        string
+	repository     string
+	debug          bool
+	skipValidation bool
+	restConfigFn   restConfigProvider
+	stateFactory   stateStoreFactory
+	stateName      string
 }
 
 func (c *planCmd) Name() string     { return "plan" }
@@ -62,6 +63,8 @@ func (c *planCmd) Usage() string {
 	fmt.Fprintf(&wri, "        namespace where the installation snapshot is stored (default \"%s\")\n", shared.DefaultNamespace)
 	fmt.Fprint(&wri, "  --diff-installed\n")
 	fmt.Fprint(&wri, "        compare computed plan against the stored installation snapshot\n")
+	fmt.Fprint(&wri, "  --skip-validation\n")
+	fmt.Fprint(&wri, "        skip configuration validation (useful for emergency recovery)\n")
 	fmt.Fprint(&wri, "  --debug\n")
 	fmt.Fprint(&wri, "        enable debug-level logging (can also use KRATEOCTL_DEBUG env var)\n\n")
 
@@ -98,6 +101,7 @@ func (c *planCmd) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.profile, "profile", "", "optional profile name")
 	f.StringVar(&c.namespace, "namespace", shared.DefaultNamespace, "kubernetes namespace where the installation snapshot is stored")
 	f.BoolVar(&c.diffInstalled, "diff-installed", false, "compare the computed plan with the stored installation snapshot")
+	f.BoolVar(&c.skipValidation, "skip-validation", false, "skip configuration validation")
 	f.BoolVar(&c.debug, "debug", false, "enable debug-level logging")
 }
 
@@ -135,7 +139,7 @@ func (c *planCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{
 		Profile:           c.profile,
 		Version:           c.version,
 		Repository:        c.repository,
-	}, l.Info)
+	}, l.Info, c.skipValidation)
 	if err != nil {
 		l.Error("Failed to load configuration: %v", err)
 		return subcommands.ExitFailure

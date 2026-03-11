@@ -39,13 +39,14 @@ func Command() subcommands.Command {
 }
 
 type applyCmd struct {
-	configFile  string
-	namespace   string
-	profile     string
-	version     string
-	repository  string
-	debug       bool
-	initSecrets bool // Hidden utility flag for generating sample secrets
+	configFile     string
+	namespace      string
+	profile        string
+	version        string
+	repository     string
+	debug          bool
+	initSecrets    bool // Hidden utility flag for generating sample secrets
+	skipValidation bool // Skip configuration validation
 
 	restConfigFn    restConfigProvider
 	getterFactory   getterFactory
@@ -107,6 +108,7 @@ func (c *applyCmd) Usage() string {
 	fmt.Fprintf(&wri, "  --config string       path to local configuration file (default \"%s\", used when --version is not set)\n", shared.DefaultConfigPath)
 	fmt.Fprintf(&wri, "  --namespace string    target namespace (default \"%s\")\n", shared.DefaultNamespace)
 	fmt.Fprint(&wri, "  --profile string      optional profile name (e.g. dev, prod)\n")
+	fmt.Fprint(&wri, "  --skip-validation     skip configuration validation (useful for emergency recovery)\n")
 	fmt.Fprint(&wri, "  --debug               enable debug-level logging (can also use KRATEOCTL_DEBUG env var)\n\n")
 	fmt.Fprint(&wri, "MODES:\n\n")
 	fmt.Fprint(&wri, "  Remote mode: When --version is specified, config is fetched from the releases\n")
@@ -128,6 +130,7 @@ func (c *applyCmd) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.configFile, "config", shared.DefaultConfigPath, "path to local configuration file")
 	f.StringVar(&c.namespace, "namespace", shared.DefaultNamespace, "kubernetes namespace for deployment")
 	f.StringVar(&c.profile, "profile", "", "optional profile name")
+	f.BoolVar(&c.skipValidation, "skip-validation", false, "skip configuration validation")
 	f.BoolVar(&c.debug, "debug", false, "enable debug-level logging")
 	// Hidden utility flag - not documented in Usage()
 	f.BoolVar(&c.initSecrets, "init-secrets", false, "")
@@ -157,7 +160,7 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 		Profile:           c.profile,
 		Version:           c.version,
 		Repository:        c.repository,
-	}, l.Info)
+	}, l.Info, c.skipValidation)
 	if err != nil {
 		l.Error("Failed to load configuration: %v", err)
 		return subcommands.ExitFailure
