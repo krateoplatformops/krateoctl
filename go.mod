@@ -3,7 +3,7 @@ module github.com/krateoplatformops/krateoctl
 go 1.25.3
 
 require (
-	github.com/aquasecurity/table v1.10.0
+	github.com/aquasecurity/table v1.11.0
 	github.com/itchyny/gojq v0.12.17
 	github.com/krateoplatformops/plumbing v1.0.0
 	github.com/krateoplatformops/provider-runtime v0.10.2
@@ -15,7 +15,9 @@ require (
 	k8s.io/api v0.35.0
 	k8s.io/apiextensions-apiserver v0.35.0
 	k8s.io/apimachinery v0.35.0
+	k8s.io/cli-runtime v0.35.0
 	k8s.io/client-go v0.35.0
+	k8s.io/klog/v2 v2.130.1
 	k8s.io/utils v0.0.0-20251002143259-bc988d571ff4
 	sigs.k8s.io/e2e-framework v0.6.0
 	sigs.k8s.io/yaml v1.6.0
@@ -127,9 +129,7 @@ require (
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	k8s.io/apiserver v0.35.0 // indirect
-	k8s.io/cli-runtime v0.35.0 // indirect
 	k8s.io/component-base v0.35.0 // indirect
-	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20250910181357-589584f1c912 // indirect
 	k8s.io/kubectl v0.35.0 // indirect
 	oras.land/oras-go/v2 v2.6.0 // indirect
