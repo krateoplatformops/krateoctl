@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/krateoplatformops/krateoctl/internal/cmd/install/secrets"
 	"github.com/krateoplatformops/krateoctl/internal/cmd/install/shared"
 	"github.com/krateoplatformops/krateoctl/internal/config"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/applier"
@@ -38,12 +39,13 @@ func Command() subcommands.Command {
 }
 
 type applyCmd struct {
-	configFile string
-	namespace  string
-	profile    string
-	version    string
-	repository string
-	debug      bool
+	configFile  string
+	namespace   string
+	profile     string
+	version     string
+	repository  string
+	debug       bool
+	initSecrets bool // Hidden utility flag for generating sample secrets
 
 	restConfigFn    restConfigProvider
 	getterFactory   getterFactory
@@ -127,6 +129,8 @@ func (c *applyCmd) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.namespace, "namespace", shared.DefaultNamespace, "kubernetes namespace for deployment")
 	f.StringVar(&c.profile, "profile", "", "optional profile name")
 	f.BoolVar(&c.debug, "debug", false, "enable debug-level logging")
+	// Hidden utility flag - not documented in Usage()
+	f.BoolVar(&c.initSecrets, "init-secrets", false, "")
 }
 
 func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
@@ -182,6 +186,16 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 	if err := c.ensureCRDFn(ctx, rc); err != nil {
 		l.Error("Failed to ensure installation CRD: %v", err)
 		return subcommands.ExitFailure
+	}
+
+	// Initialize sample secrets if requested (hidden utility feature)
+	if c.initSecrets {
+		l.Info("\n🔐 Initializing sample secrets...")
+		if err := secrets.InitializeSecrets(ctx, rc, c.namespace); err != nil {
+			l.Error("Failed to initialize secrets: %v", err)
+			return subcommands.ExitFailure
+		}
+		l.Info("✓ Sample secrets created successfully (jwt-sign-key, events-stack-db, events-user-secret)")
 	}
 
 	installationStore, err = c.stateFactory(rc, c.namespace)
