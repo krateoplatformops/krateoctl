@@ -135,7 +135,7 @@ func (c *planCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{
 		Profile:           c.profile,
 		Version:           c.version,
 		Repository:        c.repository,
-	})
+	}, l.Info)
 	if err != nil {
 		l.Error("Failed to load configuration: %v", err)
 		return subcommands.ExitFailure

@@ -23,7 +23,8 @@ type LoadResult struct {
 }
 
 // LoadConfigAndSteps loads the Krateo configuration, validates it, and resolves the active steps.
-func LoadConfigAndSteps(opts config.LoadOptions) (*LoadResult, error) {
+// The optional logger is used to display validation warnings.
+func LoadConfigAndSteps(opts config.LoadOptions, logger func(string, ...any)) (*LoadResult, error) {
 	loader := config.NewLoader(opts)
 
 	data, err := loader.Load()
@@ -37,6 +38,9 @@ func LoadConfigAndSteps(opts config.LoadOptions) (*LoadResult, error) {
 	}
 
 	validator := config.NewValidator(cfg)
+	if logger != nil {
+		validator.WithLogger(logger)
+	}
 	if err := validator.Validate(); err != nil {
 		return nil, fmt.Errorf("Configuration validation failed: %w", err)
 	}
