@@ -7,9 +7,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/krateoplatformops/krateoctl/internal/cmd/helpers"
-	"github.com/krateoplatformops/krateoctl/internal/cmd/resources"
+	"github.com/krateoplatformops/krateoctl/internal/resources"
 	"github.com/krateoplatformops/krateoctl/internal/subcommands"
+	helpers "github.com/krateoplatformops/krateoctl/internal/util/cmd"
 	"github.com/krateoplatformops/krateoctl/internal/util/kube"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
