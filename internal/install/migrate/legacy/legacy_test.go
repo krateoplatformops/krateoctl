@@ -141,3 +141,63 @@ spec:
 		t.Fatalf("valid key was incorrectly filtered: %v", service)
 	}
 }
+
+func TestConvertStringBooleanValues(t *testing.T) {
+	legacyYAML := `
+apiVersion: krateo.io/v1alpha1
+kind: KrateoPlatformOps
+spec:
+  steps:
+  - id: install-chart
+    type: chart
+    with:
+      name: myuserchart
+      repository: https://charts.example.com
+      version: 1.0.0
+      set:
+      - name: enabled
+        value: "true"
+      - name: debug
+        value: "false"
+      - name: imagePullPolicy
+        value: IfNotPresent
+`
+
+	var obj map[string]any
+	if err := yaml.Unmarshal([]byte(legacyYAML), &obj); err != nil {
+		t.Fatalf("unmarshal legacy yaml: %v", err)
+	}
+
+	doc, err := ConvertDocument(obj, "krateo-system")
+	if err != nil {
+		t.Fatalf("ConvertDocument() error = %v", err)
+	}
+
+	if len(doc.Steps) != 1 {
+		t.Fatalf("expected 1 step, got %d", len(doc.Steps))
+	}
+
+	step := doc.Steps[0]
+	values, ok := step.With["values"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected values to be a map, got %T", step.With["values"])
+	}
+
+	// Check that string "true" was converted to boolean true
+	enabled, ok := values["enabled"].(bool)
+	if !ok || !enabled {
+		t.Errorf("'true' string should be converted to boolean true, got %T: %v", values["enabled"], values["enabled"])
+	}
+
+	// Check that string "false" was converted to boolean false
+	debug, ok := values["debug"].(bool)
+	if !ok || debug {
+		t.Errorf("'false' string should be converted to boolean false, got %T: %v", values["debug"], values["debug"])
+	}
+
+	// Check that non-boolean strings remain as strings
+	policy, ok := values["imagePullPolicy"].(string)
+	if !ok || policy != "IfNotPresent" {
+		t.Errorf("non-boolean string should remain as string, got %T: %v", values["imagePullPolicy"], values["imagePullPolicy"])
+	}
+}
