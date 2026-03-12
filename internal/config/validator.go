@@ -38,6 +38,11 @@ func (v *Validator) Validate() error {
 		return err
 	}
 
+	// Validate that StepConfig keys reference valid steps
+	if err := v.validateStepConfigReferences(); err != nil {
+		return err
+	}
+
 	// Validate that all steps are referenced in at least one component (no orphaned steps)
 	if err := v.validateOrphanedSteps(); err != nil {
 		return err
@@ -130,13 +135,132 @@ func (v *Validator) validateComponentSteps() error {
 		return fmt.Errorf("%s", errMsg)
 	}
 
-	// Warn if Components reference names that don't exist in ComponentsDefinition
-	if len(v.config.doc.Components) > 0 && len(v.config.doc.ComponentsDefinition) > 0 {
+	// Error if Components reference names that don't exist in ComponentsDefinition
+	// This can happen when a profile overrides a component that doesn't exist in the base config
+	if len(v.config.doc.Components) > 0 && v.config.doc.ComponentsDefinition != nil && len(v.config.doc.ComponentsDefinition) > 0 {
+		var invalidComponents []string
 		for componentName := range v.config.doc.Components {
 			if _, exists := v.config.doc.ComponentsDefinition[componentName]; !exists {
-				v.logWarning("component %q in 'components' is not defined in 'componentsDefinition'", componentName)
+				invalidComponents = append(invalidComponents, componentName)
 			}
 		}
+		if len(invalidComponents) > 0 {
+			if len(invalidComponents) == 1 {
+				return fmt.Errorf("component %q in overrides is not defined in 'componentsDefinition'", invalidComponents[0])
+			}
+			errMsg := "the following components in overrides are not defined in 'componentsDefinition':\n"
+			for _, comp := range invalidComponents {
+				errMsg += fmt.Sprintf("  - %s\n", comp)
+			}
+			return fmt.Errorf("%s", errMsg)
+		}
+	}
+
+	return nil
+}
+
+// validateStepConfigReferences validates that all keys in StepConfig reference actual steps
+// that belong to the component. Returns an error if any step config keys don't correspond
+// to steps defined in the component's Steps array.
+func (v *Validator) validateStepConfigReferences() error {
+	if v.config.doc == nil {
+		return nil
+	}
+
+	// Build a map of all defined step IDs for quick lookup
+	stepIDMap := make(map[string]bool)
+	for _, step := range v.config.doc.Steps {
+		stepIDMap[step.ID] = true
+	}
+
+	// Check ComponentsDefinition
+	definitions := v.config.doc.ComponentsDefinition
+	if len(definitions) == 0 {
+		definitions = make(map[string]ComponentConfig)
+	}
+
+	// Also check Components (overrides) - merge with definitions for complete picture
+	overrides := v.config.doc.Components
+	if len(overrides) == 0 {
+		overrides = make(map[string]ComponentConfig)
+	}
+
+	// Build combined set of all components with their step configs
+	allComponents := make(map[string]ComponentConfig)
+	for name, comp := range definitions {
+		allComponents[name] = comp
+	}
+	for name, overrideComp := range overrides {
+		if existingComp, exists := allComponents[name]; exists {
+			// Merge the override with the definition
+			// If override has stepConfig keys, we need to validate them against the component's steps
+			merged := existingComp
+			if len(overrideComp.StepConfig) > 0 {
+				if merged.StepConfig == nil {
+					merged.StepConfig = make(map[string]map[string]interface{})
+				}
+				for k, v := range overrideComp.StepConfig {
+					merged.StepConfig[k] = v
+				}
+			}
+			allComponents[name] = merged
+		} else {
+			allComponents[name] = overrideComp
+		}
+	}
+
+	// Track invalid step config references
+	type invalidStepConfig struct {
+		component  string
+		stepConfig string
+		reason     string
+	}
+	var invalidConfigs []invalidStepConfig
+
+	// Check each component's StepConfig
+	for componentName, comp := range allComponents {
+		if len(comp.StepConfig) == 0 {
+			continue
+		}
+
+		// Build set of actual steps in this component
+		componentSteps := make(map[string]bool)
+		for _, stepID := range comp.Steps {
+			componentSteps[stepID] = true
+		}
+
+		// Validate each step config key
+		for stepConfigKey := range comp.StepConfig {
+			// Check if the step config key references a step that exists
+			if !stepIDMap[stepConfigKey] {
+				invalidConfigs = append(invalidConfigs, invalidStepConfig{
+					component:  componentName,
+					stepConfig: stepConfigKey,
+					reason:     "does not exist in the steps list",
+				})
+			} else if !componentSteps[stepConfigKey] {
+				// Step exists globally but not in this component
+				invalidConfigs = append(invalidConfigs, invalidStepConfig{
+					component:  componentName,
+					stepConfig: stepConfigKey,
+					reason:     "is not a step of this component",
+				})
+			}
+		}
+	}
+
+	// Return error with all invalid references
+	if len(invalidConfigs) > 0 {
+		if len(invalidConfigs) == 1 {
+			ref := invalidConfigs[0]
+			return fmt.Errorf("component %q has invalid stepConfig key %q which %s", ref.component, ref.stepConfig, ref.reason)
+		}
+
+		errMsg := "the following stepConfig references are invalid:\n"
+		for _, ref := range invalidConfigs {
+			errMsg += fmt.Sprintf("  - component %q: stepConfig key %q %s\n", ref.component, ref.stepConfig, ref.reason)
+		}
+		return fmt.Errorf("%s", errMsg)
 	}
 
 	return nil

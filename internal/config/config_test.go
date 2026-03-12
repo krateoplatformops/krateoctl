@@ -238,7 +238,6 @@ func TestValidateComponentStepsMultipleInvalid(t *testing.T) {
 }
 
 func TestValidateComponentsNotInDefinition(t *testing.T) {
-	warnings := []string{}
 	cfg := mustNewConfig(t, map[string]any{
 		"componentsDefinition": map[string]any{
 			"backend": map[string]any{
@@ -258,17 +257,16 @@ func TestValidateComponentsNotInDefinition(t *testing.T) {
 		},
 	})
 
-	validator := NewValidator(cfg).WithLogger(func(msg string, args ...any) {
-		warnings = append(warnings, msg)
-	})
-
+	validator := NewValidator(cfg)
 	err := validator.Validate()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatalf("expected error for component not in definition, got nil")
 	}
-
-	if len(warnings) == 0 {
-		t.Fatalf("expected warning for undefined component, got none")
+	if !contains(err.Error(), "unknown-component") {
+		t.Fatalf("expected error mentioning unknown-component, got: %v", err)
+	}
+	if !contains(err.Error(), "not defined in 'componentsDefinition'") {
+		t.Fatalf("expected error about component not in definition, got: %v", err)
 	}
 }
 
@@ -346,6 +344,109 @@ func TestValidateNoComponentsDefinition(t *testing.T) {
 
 	if !contains(err.Error(), "no components defined") {
 		t.Fatalf("expected error about no components, got: %v", err)
+	}
+}
+
+func TestValidateStepConfigReferencesNonExistentStep(t *testing.T) {
+	cfg := mustNewConfig(t, map[string]any{
+		"componentsDefinition": map[string]any{
+			"composable-operations": map[string]any{
+				"steps": []interface{}{"install-core-provider"},
+				"stepConfig": map[string]any{
+					"ss-install-core-provider": map[string]any{
+						"with": map[string]any{
+							"env": "test",
+						},
+					},
+				},
+			},
+		},
+		"steps": []interface{}{
+			map[string]any{
+				"id":   "install-core-provider",
+				"type": "chart",
+			},
+		},
+	})
+
+	validator := NewValidator(cfg)
+	err := validator.Validate()
+	if err == nil {
+		t.Fatalf("expected error for non-existent step in stepConfig, got nil")
+	}
+	if !contains(err.Error(), "ss-install-core-provider") {
+		t.Fatalf("expected error mentioning ss-install-core-provider, got: %v", err)
+	}
+	if !contains(err.Error(), "does not exist in the steps list") {
+		t.Fatalf("expected error stating step doesn't exist, got: %v", err)
+	}
+}
+
+func TestValidateStepConfigReferencesStepNotInComponent(t *testing.T) {
+	cfg := mustNewConfig(t, map[string]any{
+		"componentsDefinition": map[string]any{
+			"composable-operations": map[string]any{
+				"steps": []interface{}{"install-core-provider"},
+				"stepConfig": map[string]any{
+					"install-authn": map[string]any{
+						"with": map[string]any{
+							"env": "test",
+						},
+					},
+				},
+			},
+		},
+		"steps": []interface{}{
+			map[string]any{
+				"id":   "install-core-provider",
+				"type": "chart",
+			},
+			map[string]any{
+				"id":   "install-authn",
+				"type": "chart",
+			},
+		},
+	})
+
+	validator := NewValidator(cfg)
+	err := validator.Validate()
+	if err == nil {
+		t.Fatalf("expected error for stepConfig referencing step not in component, got nil")
+	}
+	if !contains(err.Error(), "install-authn") {
+		t.Fatalf("expected error mentioning install-authn, got: %v", err)
+	}
+	if !contains(err.Error(), "is not a step of this component") {
+		t.Fatalf("expected error stating step is not in component, got: %v", err)
+	}
+}
+
+func TestValidateStepConfigValid(t *testing.T) {
+	cfg := mustNewConfig(t, map[string]any{
+		"componentsDefinition": map[string]any{
+			"composable-operations": map[string]any{
+				"steps": []interface{}{"install-core-provider"},
+				"stepConfig": map[string]any{
+					"install-core-provider": map[string]any{
+						"with": map[string]any{
+							"env": "test",
+						},
+					},
+				},
+			},
+		},
+		"steps": []interface{}{
+			map[string]any{
+				"id":   "install-core-provider",
+				"type": "chart",
+			},
+		},
+	})
+
+	validator := NewValidator(cfg)
+	err := validator.Validate()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
