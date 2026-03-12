@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -177,4 +178,283 @@ func mustNewConfig(t *testing.T, data map[string]any) *Config {
 		t.Fatalf("failed to create config: %v", err)
 	}
 	return cfg
+}
+
+// Validator tests
+
+func TestValidateComponentStepsReferencesNonExistentStep(t *testing.T) {
+	cfg := mustNewConfig(t, map[string]any{
+		"componentsDefinition": map[string]any{
+			"backend": map[string]any{
+				"steps": []interface{}{"non-existent-step"},
+			},
+		},
+		"steps": []interface{}{
+			map[string]any{
+				"id":   "install-authn",
+				"type": "chart",
+			},
+		},
+	})
+
+	validator := NewValidator(cfg)
+	err := validator.Validate()
+	if err == nil {
+		t.Fatalf("expected error for non-existent step, got nil")
+	}
+	if !contains(err.Error(), "non-existent-step") {
+		t.Fatalf("expected error mentioning non-existent-step, got: %v", err)
+	}
+}
+
+func TestValidateComponentStepsMultipleInvalid(t *testing.T) {
+	cfg := mustNewConfig(t, map[string]any{
+		"componentsDefinition": map[string]any{
+			"backend": map[string]any{
+				"steps": []interface{}{"missing-step-1", "missing-step-2"},
+			},
+			"frontend": map[string]any{
+				"steps": []interface{}{"missing-step-3"},
+			},
+		},
+		"steps": []interface{}{
+			map[string]any{
+				"id":   "install-authn",
+				"type": "chart",
+			},
+		},
+	})
+
+	validator := NewValidator(cfg)
+	err := validator.Validate()
+	if err == nil {
+		t.Fatalf("expected error for non-existent steps, got nil")
+	}
+
+	errMsg := err.Error()
+	if !contains(errMsg, "missing-step-1") || !contains(errMsg, "missing-step-2") || !contains(errMsg, "missing-step-3") {
+		t.Fatalf("expected error mentioning all missing steps, got: %v", err)
+	}
+}
+
+func TestValidateComponentsNotInDefinition(t *testing.T) {
+	cfg := mustNewConfig(t, map[string]any{
+		"componentsDefinition": map[string]any{
+			"backend": map[string]any{
+				"steps": []interface{}{"install-authn"},
+			},
+		},
+		"components": map[string]any{
+			"unknown-component": map[string]any{
+				"enabled": false,
+			},
+		},
+		"steps": []interface{}{
+			map[string]any{
+				"id":   "install-authn",
+				"type": "chart",
+			},
+		},
+	})
+
+	validator := NewValidator(cfg)
+	err := validator.Validate()
+	if err == nil {
+		t.Fatalf("expected error for component not in definition, got nil")
+	}
+	if !contains(err.Error(), "unknown-component") {
+		t.Fatalf("expected error mentioning unknown-component, got: %v", err)
+	}
+	if !contains(err.Error(), "not defined in 'componentsDefinition'") {
+		t.Fatalf("expected error about component not in definition, got: %v", err)
+	}
+}
+
+func TestValidateOrphanedSteps(t *testing.T) {
+	var warnings []string
+	cfg := mustNewConfig(t, map[string]any{
+		"componentsDefinition": map[string]any{
+			"backend": map[string]any{
+				"steps": []interface{}{"install-authn"},
+			},
+		},
+		"steps": []interface{}{
+			map[string]any{
+				"id":   "install-authn",
+				"type": "chart",
+			},
+			map[string]any{
+				"id":   "orphaned-step",
+				"type": "chart",
+			},
+		},
+	})
+
+	validator := NewValidator(cfg).WithLogger(func(msg string, args ...any) {
+		warnings = append(warnings, fmt.Sprintf(msg, args...))
+	})
+
+	err := validator.Validate()
+	if err == nil {
+		t.Fatalf("expected error for orphaned step, got nil")
+	}
+
+	if !contains(err.Error(), "orphaned-step") {
+		t.Fatalf("expected error about orphaned-step, got: %v", err)
+	}
+}
+
+func TestValidateValidComponentSteps(t *testing.T) {
+	cfg := mustNewConfig(t, map[string]any{
+		"componentsDefinition": map[string]any{
+			"backend": map[string]any{
+				"steps": []interface{}{"install-authn"},
+			},
+		},
+		"steps": []interface{}{
+			map[string]any{
+				"id":   "install-authn",
+				"type": "chart",
+			},
+		},
+	})
+
+	validator := NewValidator(cfg)
+	err := validator.Validate()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateNoComponentsDefinition(t *testing.T) {
+	cfg := mustNewConfig(t, map[string]any{
+		"steps": []interface{}{
+			map[string]any{
+				"id":   "install-authn",
+				"type": "chart",
+			},
+		},
+	})
+
+	validator := NewValidator(cfg)
+	err := validator.Validate()
+	if err == nil {
+		t.Fatalf("expected error when no components defined, got nil")
+	}
+
+	if !contains(err.Error(), "no components defined") {
+		t.Fatalf("expected error about no components, got: %v", err)
+	}
+}
+
+func TestValidateStepConfigReferencesNonExistentStep(t *testing.T) {
+	cfg := mustNewConfig(t, map[string]any{
+		"componentsDefinition": map[string]any{
+			"composable-operations": map[string]any{
+				"steps": []interface{}{"install-core-provider"},
+				"stepConfig": map[string]any{
+					"ss-install-core-provider": map[string]any{
+						"with": map[string]any{
+							"env": "test",
+						},
+					},
+				},
+			},
+		},
+		"steps": []interface{}{
+			map[string]any{
+				"id":   "install-core-provider",
+				"type": "chart",
+			},
+		},
+	})
+
+	validator := NewValidator(cfg)
+	err := validator.Validate()
+	if err == nil {
+		t.Fatalf("expected error for non-existent step in stepConfig, got nil")
+	}
+	if !contains(err.Error(), "ss-install-core-provider") {
+		t.Fatalf("expected error mentioning ss-install-core-provider, got: %v", err)
+	}
+	if !contains(err.Error(), "does not exist in the steps list") {
+		t.Fatalf("expected error stating step doesn't exist, got: %v", err)
+	}
+}
+
+func TestValidateStepConfigReferencesStepNotInComponent(t *testing.T) {
+	cfg := mustNewConfig(t, map[string]any{
+		"componentsDefinition": map[string]any{
+			"composable-operations": map[string]any{
+				"steps": []interface{}{"install-core-provider"},
+				"stepConfig": map[string]any{
+					"install-authn": map[string]any{
+						"with": map[string]any{
+							"env": "test",
+						},
+					},
+				},
+			},
+		},
+		"steps": []interface{}{
+			map[string]any{
+				"id":   "install-core-provider",
+				"type": "chart",
+			},
+			map[string]any{
+				"id":   "install-authn",
+				"type": "chart",
+			},
+		},
+	})
+
+	validator := NewValidator(cfg)
+	err := validator.Validate()
+	if err == nil {
+		t.Fatalf("expected error for stepConfig referencing step not in component, got nil")
+	}
+	if !contains(err.Error(), "install-authn") {
+		t.Fatalf("expected error mentioning install-authn, got: %v", err)
+	}
+	if !contains(err.Error(), "is not a step of this component") {
+		t.Fatalf("expected error stating step is not in component, got: %v", err)
+	}
+}
+
+func TestValidateStepConfigValid(t *testing.T) {
+	cfg := mustNewConfig(t, map[string]any{
+		"componentsDefinition": map[string]any{
+			"composable-operations": map[string]any{
+				"steps": []interface{}{"install-core-provider"},
+				"stepConfig": map[string]any{
+					"install-core-provider": map[string]any{
+						"with": map[string]any{
+							"env": "test",
+						},
+					},
+				},
+			},
+		},
+		"steps": []interface{}{
+			map[string]any{
+				"id":   "install-core-provider",
+				"type": "chart",
+			},
+		},
+	})
+
+	validator := NewValidator(cfg)
+	err := validator.Validate()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func contains(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }

@@ -82,12 +82,22 @@ func (l *Loader) Load() (map[string]any, error) {
 	// that krateo-overrides.yaml is applied *after* all profiles, so that
 	// top-level overrides win over any profile.
 	profileOverrides := make(map[string]any)
+	foundProfiles := make(map[string]bool)
 
 	if len(profiles) > 0 {
 		dir := filepath.Dir(l.opts.UserOverridesPath)
 		base := filepath.Base(l.opts.UserOverridesPath)
 		ext := filepath.Ext(base)
 		name := strings.TrimSuffix(base, ext)
+
+		var profilesMap map[string]any
+		if profilesRaw, ok := baseOverrides["profiles"]; ok {
+			var ok2 bool
+			profilesMap, ok2 = profilesRaw.(map[string]any)
+			if !ok2 {
+				return nil, fmt.Errorf("profiles must be a mapping, got %T", profilesRaw)
+			}
+		}
 
 		// 1) Profile-specific override files: krateo-overrides.<profile>.yaml
 		for _, p := range profiles {
@@ -100,30 +110,30 @@ func (l *Loader) Load() (map[string]any, error) {
 					return nil, fmt.Errorf("failed to load profile overrides from %s: %w", profPath, err)
 				}
 				profileOverrides = mergeConfigs(profileOverrides, profData)
+				foundProfiles[p] = true
 			} else if err != nil && !os.IsNotExist(err) {
 				return nil, fmt.Errorf("failed to stat profile overrides file %s: %w", profPath, err)
 			}
 		}
 
 		// 2) In-file profiles defined inside base overrides (if any)
-		if profilesRaw, ok := baseOverrides["profiles"]; ok {
-			profMap, ok := profilesRaw.(map[string]any)
-			if !ok {
-				return nil, fmt.Errorf("profiles must be a mapping, got %T", profilesRaw)
-			}
-
+		if profilesMap != nil {
 			for _, p := range profiles {
-				entryRaw, ok := profMap[p]
-				if !ok {
-					return nil, fmt.Errorf("profile %q not found in overrides", p)
+				if entryRaw, ok := profilesMap[p]; ok {
+					entryMap, ok := entryRaw.(map[string]any)
+					if !ok {
+						return nil, fmt.Errorf("profile %q must be a mapping, got %T", p, entryRaw)
+					}
+					profileOverrides = mergeConfigs(profileOverrides, entryMap)
+					foundProfiles[p] = true
 				}
+			}
+		}
 
-				entryMap, ok := entryRaw.(map[string]any)
-				if !ok {
-					return nil, fmt.Errorf("profile %q must be a mapping, got %T", p, entryRaw)
-				}
-
-				profileOverrides = mergeConfigs(profileOverrides, entryMap)
+		// 3) Validate that all requested profiles were found
+		for _, p := range profiles {
+			if !foundProfiles[p] {
+				return nil, l.profileNotFoundError(p)
 			}
 		}
 	}
@@ -159,11 +169,19 @@ func (l *Loader) loadRemote() (map[string]any, error) {
 		return nil, fmt.Errorf("failed to load config from %s@%s: %w", repo, l.opts.Version, err)
 	}
 
-	// Try to fetch overrides file (optional)
+	// Try to fetch overrides file (optional), fallback to local if not found remotely
 	baseOverrides, err := l.loadRemoteFile(repo, l.opts.Version, "krateo-overrides.yaml")
 	if err != nil {
-		// Overrides are optional, so we just skip if not found
+		// Try to load from local filesystem as fallback
 		baseOverrides = make(map[string]any)
+		if l.opts.UserOverridesPath != "" {
+			if fi, err := os.Stat(l.opts.UserOverridesPath); err == nil && !fi.IsDir() {
+				baseOverrides, err = l.loadFile(l.opts.UserOverridesPath)
+				if err != nil {
+					return nil, fmt.Errorf("failed to load local overrides from %s: %w", l.opts.UserOverridesPath, err)
+				}
+			}
+		}
 	}
 
 	// Determine effective profile list
@@ -177,37 +195,64 @@ func (l *Loader) loadRemote() (map[string]any, error) {
 
 	// Collect profile-specific overrides
 	profileOverrides := make(map[string]any)
+	foundProfiles := make(map[string]bool)
 
 	if len(profiles) > 0 {
-		// Try to fetch profile-specific override files
+		var profilesMap map[string]any
+		if profilesRaw, ok := baseOverrides["profiles"]; ok {
+			var ok2 bool
+			profilesMap, ok2 = profilesRaw.(map[string]any)
+			if !ok2 {
+				return nil, fmt.Errorf("profiles must be a mapping, got %T", profilesRaw)
+			}
+		}
+
+		// Try to fetch profile-specific override files, fallback to local if not found remotely
 		for _, p := range profiles {
 			profFile := fmt.Sprintf("krateo-overrides.%s.yaml", p)
+
+			// Try remote first
 			profData, err := l.loadRemoteFile(repo, l.opts.Version, profFile)
 			if err == nil {
 				profileOverrides = mergeConfigs(profileOverrides, profData)
+				foundProfiles[p] = true
+				continue
 			}
-			// If profile file doesn't exist, that's okay, continue
+
+			// Fallback to local if UserOverridesPath is specified
+			if l.opts.UserOverridesPath != "" {
+				dir := filepath.Dir(l.opts.UserOverridesPath)
+				localPath := filepath.Join(dir, profFile)
+
+				if fi, err := os.Stat(localPath); err == nil && !fi.IsDir() {
+					profData, err = l.loadFile(localPath)
+					if err != nil {
+						return nil, fmt.Errorf("failed to load local profile overrides from %s: %w", localPath, err)
+					}
+					profileOverrides = mergeConfigs(profileOverrides, profData)
+					foundProfiles[p] = true
+				}
+			}
 		}
 
 		// Check for in-file profiles defined inside base overrides
-		if profilesRaw, ok := baseOverrides["profiles"]; ok {
-			profMap, ok := profilesRaw.(map[string]any)
-			if !ok {
-				return nil, fmt.Errorf("profiles must be a mapping, got %T", profilesRaw)
-			}
-
+		if profilesMap != nil {
 			for _, p := range profiles {
-				entryRaw, ok := profMap[p]
-				if !ok {
-					return nil, fmt.Errorf("profile %q not found in overrides", p)
+				if entryRaw, ok := profilesMap[p]; ok {
+					entryMap, ok := entryRaw.(map[string]any)
+					if !ok {
+						return nil, fmt.Errorf("profile %q must be a mapping, got %T", p, entryRaw)
+					}
+					profileOverrides = mergeConfigs(profileOverrides, entryMap)
+					foundProfiles[p] = true
 				}
+			}
+		}
 
-				entryMap, ok := entryRaw.(map[string]any)
-				if !ok {
-					return nil, fmt.Errorf("profile %q must be a mapping, got %T", p, entryRaw)
-				}
-
-				profileOverrides = mergeConfigs(profileOverrides, entryMap)
+		// Validate that all requested profiles were found
+		for _, p := range profiles {
+			if !foundProfiles[p] {
+				return nil, l.profileNotFoundError(p)
 			}
 		}
 	}
@@ -312,4 +357,19 @@ func parseProfiles(s string) []string {
 		res = append(res, p)
 	}
 	return res
+}
+
+// profileNotFoundError returns a descriptive error message explaining how to define a profile.
+func (l *Loader) profileNotFoundError(profileName string) error {
+	errMsg := fmt.Sprintf("profile %q not found\n", profileName)
+	errMsg += "\nProfiles can be defined in two ways:\n"
+	errMsg += "  1. As separate files: krateo-overrides." + profileName + ".yaml\n"
+	errMsg += "  2. In-file under the 'profiles' section of krateo-overrides.yaml:\n"
+	errMsg += "       profiles:\n"
+	errMsg += "         " + profileName + ":\n"
+	errMsg += "           components:\n"
+	errMsg += "             # Override component configurations here\n"
+	errMsg += "\nFor complete documentation on how to define and use profiles, run:\n"
+	errMsg += "  krateoctl install plan --help\n"
+	return fmt.Errorf("%s", errMsg)
 }

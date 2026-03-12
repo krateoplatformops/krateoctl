@@ -9,7 +9,9 @@ import (
 
 	"github.com/krateoplatformops/krateoctl/internal/cmd/gencrd"
 	"github.com/krateoplatformops/krateoctl/internal/cmd/genschema"
+	"github.com/krateoplatformops/krateoctl/internal/cmd/get"
 	"github.com/krateoplatformops/krateoctl/internal/cmd/install"
+	"github.com/krateoplatformops/krateoctl/internal/cmd/patch"
 	"github.com/krateoplatformops/krateoctl/internal/cmd/users"
 	"github.com/krateoplatformops/krateoctl/internal/subcommands"
 	"k8s.io/client-go/rest"
@@ -44,6 +46,8 @@ func main() {
 	// Utilities
 	tool.Register(genschema.Command(), categoryUtilities)
 	tool.Register(gencrd.Command(), categoryUtilities)
+	tool.Register(get.Command(), categoryUtilities)
+	tool.Register(patch.Command(), categoryUtilities)
 	tool.Register(users.AddCommand(), categoryUtilities)
 
 	flag.Parse()

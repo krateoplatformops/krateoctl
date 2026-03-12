@@ -22,8 +22,9 @@ type LoadResult struct {
 	OriginalSteps []*types.Step
 }
 
-// LoadConfigAndSteps loads the Krateo configuration, validates it, and resolves the active steps.
-func LoadConfigAndSteps(opts config.LoadOptions) (*LoadResult, error) {
+// LoadConfigAndSteps loads the Krateo configuration, validates it (unless skipped), and resolves the active steps.
+// The optional logger is used to display validation warnings.
+func LoadConfigAndSteps(opts config.LoadOptions, logger func(string, ...any), skipValidation bool) (*LoadResult, error) {
 	loader := config.NewLoader(opts)
 
 	data, err := loader.Load()
@@ -36,9 +37,14 @@ func LoadConfigAndSteps(opts config.LoadOptions) (*LoadResult, error) {
 		return nil, fmt.Errorf("Failed to build configuration: %w", err)
 	}
 
-	validator := config.NewValidator(cfg)
-	if err := validator.Validate(); err != nil {
-		return nil, fmt.Errorf("Configuration validation failed: %w", err)
+	if !skipValidation {
+		validator := config.NewValidator(cfg)
+		if logger != nil {
+			validator.WithLogger(logger)
+		}
+		if err := validator.Validate(); err != nil {
+			return nil, fmt.Errorf("Configuration validation failed: %w", err)
+		}
 	}
 
 	steps, err := cfg.GetActiveSteps()

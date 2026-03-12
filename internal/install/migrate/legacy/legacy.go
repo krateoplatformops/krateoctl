@@ -180,6 +180,10 @@ func isValidKey(key string) bool {
 func assignNested(target map[string]any, dottedKey string, value any) {
 	parts := strings.Split(dottedKey, ".")
 	current := target
+
+	// Convert string boolean values to actual booleans
+	value = convertStringBool(value)
+
 	for i, part := range parts {
 		if part == "" {
 			continue
@@ -205,6 +209,21 @@ func assignNested(target map[string]any, dottedKey string, value any) {
 		}
 		current = child
 	}
+}
+
+// convertStringBool converts string representations of booleans to actual booleans.
+// This ensures that "true"/"false" string values from the CR are properly converted
+// to boolean types in the generated configuration.
+func convertStringBool(value any) any {
+	if str, ok := value.(string); ok {
+		switch strings.ToLower(str) {
+		case "true":
+			return true
+		case "false":
+			return false
+		}
+	}
+	return value
 }
 
 func ensureMap(target map[string]any, key string) map[string]any {

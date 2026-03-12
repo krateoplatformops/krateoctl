@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/krateoplatformops/krateoctl/internal/cmd/install/secrets"
 	"github.com/krateoplatformops/krateoctl/internal/cmd/install/shared"
 	"github.com/krateoplatformops/krateoctl/internal/config"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/applier"
@@ -38,12 +39,14 @@ func Command() subcommands.Command {
 }
 
 type applyCmd struct {
-	configFile string
-	namespace  string
-	profile    string
-	version    string
-	repository string
-	debug      bool
+	configFile     string
+	namespace      string
+	profile        string
+	version        string
+	repository     string
+	debug          bool
+	initSecrets    bool // Hidden utility flag for generating sample secrets
+	skipValidation bool // Skip configuration validation
 
 	restConfigFn    restConfigProvider
 	getterFactory   getterFactory
@@ -105,6 +108,7 @@ func (c *applyCmd) Usage() string {
 	fmt.Fprintf(&wri, "  --config string       path to local configuration file (default \"%s\", used when --version is not set)\n", shared.DefaultConfigPath)
 	fmt.Fprintf(&wri, "  --namespace string    target namespace (default \"%s\")\n", shared.DefaultNamespace)
 	fmt.Fprint(&wri, "  --profile string      optional profile name (e.g. dev, prod)\n")
+	fmt.Fprint(&wri, "  --skip-validation     skip configuration validation (useful for emergency recovery)\n")
 	fmt.Fprint(&wri, "  --debug               enable debug-level logging (can also use KRATEOCTL_DEBUG env var)\n\n")
 	fmt.Fprint(&wri, "MODES:\n\n")
 	fmt.Fprint(&wri, "  Remote mode: When --version is specified, config is fetched from the releases\n")
@@ -126,7 +130,10 @@ func (c *applyCmd) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.configFile, "config", shared.DefaultConfigPath, "path to local configuration file")
 	f.StringVar(&c.namespace, "namespace", shared.DefaultNamespace, "kubernetes namespace for deployment")
 	f.StringVar(&c.profile, "profile", "", "optional profile name")
+	f.BoolVar(&c.skipValidation, "skip-validation", false, "skip configuration validation")
 	f.BoolVar(&c.debug, "debug", false, "enable debug-level logging")
+	// Hidden utility flag - not documented in Usage()
+	f.BoolVar(&c.initSecrets, "init-secrets", false, "")
 }
 
 func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
@@ -153,7 +160,7 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 		Profile:           c.profile,
 		Version:           c.version,
 		Repository:        c.repository,
-	})
+	}, l.Info, c.skipValidation)
 	if err != nil {
 		l.Error("Failed to load configuration: %v", err)
 		return subcommands.ExitFailure
@@ -182,6 +189,16 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 	if err := c.ensureCRDFn(ctx, rc); err != nil {
 		l.Error("Failed to ensure installation CRD: %v", err)
 		return subcommands.ExitFailure
+	}
+
+	// Initialize sample secrets if requested (hidden utility feature)
+	if c.initSecrets {
+		l.Info("\n🔐 Initializing sample secrets...")
+		if err := secrets.InitializeSecrets(ctx, rc, c.namespace); err != nil {
+			l.Error("Failed to initialize secrets: %v", err)
+			return subcommands.ExitFailure
+		}
+		l.Info("✓ Sample secrets created successfully (jwt-sign-key, events-stack-db, events-user-secret)")
 	}
 
 	installationStore, err = c.stateFactory(rc, c.namespace)
@@ -225,7 +242,7 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 		if err := installationStore.Save(ctx, c.stateName, snapshot); err != nil {
 			l.Warn("⚠ Unable to persist installation snapshot: %v", err)
 		} else {
-			l.Info("✓ Installation snapshot saved as %q", c.stateName)
+			l.Info("✓ Installation snapshot saved as %q with apiVersion %q and kind %q in the namespace %q", c.stateName, "krateo.io/v1", "Installation", c.namespace)
 		}
 	}
 
