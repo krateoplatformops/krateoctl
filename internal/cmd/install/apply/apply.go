@@ -198,7 +198,7 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 			l.Error("Failed to initialize secrets: %v", err)
 			return subcommands.ExitFailure
 		}
-		l.Info("✓ Sample secrets created successfully (jwt-sign-key, krateo-db, krateo-db-user)")
+		l.Info("✓ Sample secrets created successfully (%s, %s, %s) in namespace '%s'", secrets.KrateoDbSecretName, secrets.KrateoDbUserSecretName, secrets.JWTSecretName, c.namespace)
 	}
 
 	installationStore, err = c.stateFactory(rc, c.namespace)

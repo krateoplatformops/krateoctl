@@ -11,6 +11,13 @@ import (
 	"k8s.io/client-go/rest"
 )
 
+// Secret names and keys used in the installation process
+const (
+	JWTSecretName          = "jwt-sign-key"
+	KrateoDbSecretName     = "krateo-db"
+	KrateoDbUserSecretName = "krateo-db-user"
+)
+
 // GenerateRandomKey creates a random base64-encoded key of specified length
 func GenerateRandomKey(length int) (string, error) {
 	bytes := make([]byte, length)
@@ -30,7 +37,7 @@ func CreateJWTSigningSecret(ctx context.Context, namespace string) (*unstructure
 	secret := &unstructured.Unstructured{}
 	secret.SetAPIVersion("v1")
 	secret.SetKind("Secret")
-	secret.SetName("jwt-sign-key")
+	secret.SetName(JWTSecretName)
 	secret.SetNamespace(namespace)
 
 	secret.Object["type"] = "Opaque"
@@ -41,7 +48,7 @@ func CreateJWTSigningSecret(ctx context.Context, namespace string) (*unstructure
 	return secret, nil
 }
 
-// CreateKrateoDbSecret creates the `krateo-db` secret used by resources-stack and events-stack components
+// CreateKrateoDbSecret creates the secret used by resources-stack and events-stack components
 func CreateKrateoDbSecret(ctx context.Context, namespace string) (*unstructured.Unstructured, error) {
 	dbPass, err := GenerateRandomKey(16)
 	if err != nil {
@@ -50,24 +57,24 @@ func CreateKrateoDbSecret(ctx context.Context, namespace string) (*unstructured.
 	return createKrateoDbSecretWithPassword(namespace, dbPass), nil
 }
 
-// createKrateoDbSecretWithPassword creates the `krateo-db` secret with a provided password
+// createKrateoDbSecretWithPassword creates the secret with a provided password
 func createKrateoDbSecretWithPassword(namespace, password string) *unstructured.Unstructured {
 	secret := &unstructured.Unstructured{}
 	secret.SetAPIVersion("v1")
 	secret.SetKind("Secret")
-	secret.SetName("krateo-db")
+	secret.SetName(KrateoDbSecretName)
 	secret.SetNamespace(namespace)
 
 	secret.Object["type"] = "Opaque"
 	secret.Object["stringData"] = map[string]interface{}{
-		"DB_USER": "krateo-db-user",
+		"DB_USER": KrateoDbUserSecretName,
 		"DB_PASS": password,
 	}
 
 	return secret
 }
 
-// CreateKrateoDbUserSecret creates the `krateo-db-user` secret for the CNPG cluster
+// CreateKrateoDbUserSecret creates the secret for the CNPG cluster
 func CreateKrateoDbUserSecret(ctx context.Context, namespace string) (*unstructured.Unstructured, error) {
 	password, err := GenerateRandomKey(16)
 	if err != nil {
@@ -76,17 +83,17 @@ func CreateKrateoDbUserSecret(ctx context.Context, namespace string) (*unstructu
 	return createKrateoDbUserSecretWithPassword(namespace, password), nil
 }
 
-// createKrateoDbUserSecretWithPassword creates the `krateo-db-user` secret with a provided password
+// createKrateoDbUserSecretWithPassword creates the secret with a provided password
 func createKrateoDbUserSecretWithPassword(namespace, password string) *unstructured.Unstructured {
 	secret := &unstructured.Unstructured{}
 	secret.SetAPIVersion("v1")
 	secret.SetKind("Secret")
-	secret.SetName("krateo-db-user")
+	secret.SetName(KrateoDbUserSecretName)
 	secret.SetNamespace(namespace)
 
 	secret.Object["type"] = "Opaque"
 	secret.Object["stringData"] = map[string]interface{}{
-		"username": "krateo-db-user",
+		"username": KrateoDbUserSecretName,
 		"password": password,
 	}
 
@@ -100,7 +107,7 @@ func InitializeSecrets(ctx context.Context, cfg *rest.Config, namespace string) 
 		return fmt.Errorf("failed to create applier: %w", err)
 	}
 
-	// Generate a shared password for both krateo-db and krateo-db-user secrets
+	// Generate a shared password for both db and db-user secrets to ensure they are consistent
 	sharedPassword, err := GenerateRandomKey(16)
 	if err != nil {
 		return fmt.Errorf("failed to generate shared password: %w", err)
@@ -114,11 +121,10 @@ func InitializeSecrets(ctx context.Context, cfg *rest.Config, namespace string) 
 	}
 	secrets = append(secrets, jwtSecret)
 
-	// Use the shared password for `krateo-db` secret
+	// Use the shared password for db and db-user secrets to ensure they are consistent
 	krateoDbSecret := createKrateoDbSecretWithPassword(namespace, sharedPassword)
 	secrets = append(secrets, krateoDbSecret)
 
-	// Use the same shared password for `krateo-db-user` secret
 	krateoDbUserSecret := createKrateoDbUserSecretWithPassword(namespace, sharedPassword)
 	secrets = append(secrets, krateoDbUserSecret)
 
