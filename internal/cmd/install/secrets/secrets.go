@@ -41,52 +41,52 @@ func CreateJWTSigningSecret(ctx context.Context, namespace string) (*unstructure
 	return secret, nil
 }
 
-// CreateEventStackDBSecret creates the events-stack-db secret for CNPG
-func CreateEventStackDBSecret(ctx context.Context, namespace string) (*unstructured.Unstructured, error) {
+// CreateKrateoDbSecret creates the `krateo-db` secret used by resources-stack and events-stack components
+func CreateKrateoDbSecret(ctx context.Context, namespace string) (*unstructured.Unstructured, error) {
 	dbPass, err := GenerateRandomKey(16)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate database password: %w", err)
 	}
-	return createEventStackDBSecretWithPassword(namespace, dbPass), nil
+	return createKrateoDbSecretWithPassword(namespace, dbPass), nil
 }
 
-// createEventStackDBSecretWithPassword creates the events-stack-db secret with a provided password
-func createEventStackDBSecretWithPassword(namespace, password string) *unstructured.Unstructured {
+// createKrateoDbSecretWithPassword creates the `krateo-db` secret with a provided password
+func createKrateoDbSecretWithPassword(namespace, password string) *unstructured.Unstructured {
 	secret := &unstructured.Unstructured{}
 	secret.SetAPIVersion("v1")
 	secret.SetKind("Secret")
-	secret.SetName("events-stack-db")
+	secret.SetName("krateo-db")
 	secret.SetNamespace(namespace)
 
 	secret.Object["type"] = "Opaque"
 	secret.Object["stringData"] = map[string]interface{}{
-		"DB_USER": "events_user",
+		"DB_USER": "krateo-db-user",
 		"DB_PASS": password,
 	}
 
 	return secret
 }
 
-// CreateEventsUserSecret creates the events-user-secret for CNPG cluster
-func CreateEventsUserSecret(ctx context.Context, namespace string) (*unstructured.Unstructured, error) {
+// CreateKrateoDbUserSecret creates the `krateo-db-user` secret for the CNPG cluster
+func CreateKrateoDbUserSecret(ctx context.Context, namespace string) (*unstructured.Unstructured, error) {
 	password, err := GenerateRandomKey(16)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate user password: %w", err)
 	}
-	return createEventsUserSecretWithPassword(namespace, password), nil
+	return createKrateoDbUserSecretWithPassword(namespace, password), nil
 }
 
-// createEventsUserSecretWithPassword creates the events-user-secret with a provided password
-func createEventsUserSecretWithPassword(namespace, password string) *unstructured.Unstructured {
+// createKrateoDbUserSecretWithPassword creates the `krateo-db-user` secret with a provided password
+func createKrateoDbUserSecretWithPassword(namespace, password string) *unstructured.Unstructured {
 	secret := &unstructured.Unstructured{}
 	secret.SetAPIVersion("v1")
 	secret.SetKind("Secret")
-	secret.SetName("events-user-secret")
+	secret.SetName("krateo-db-user")
 	secret.SetNamespace(namespace)
 
 	secret.Object["type"] = "Opaque"
 	secret.Object["stringData"] = map[string]interface{}{
-		"username": "events_user",
+		"username": "krateo-db-user",
 		"password": password,
 	}
 
@@ -100,7 +100,7 @@ func InitializeSecrets(ctx context.Context, cfg *rest.Config, namespace string) 
 		return fmt.Errorf("failed to create applier: %w", err)
 	}
 
-	// Generate a shared password for both events-stack-db and events-user-secret
+	// Generate a shared password for both krateo-db and krateo-db-user secrets
 	sharedPassword, err := GenerateRandomKey(16)
 	if err != nil {
 		return fmt.Errorf("failed to generate shared password: %w", err)
@@ -114,13 +114,13 @@ func InitializeSecrets(ctx context.Context, cfg *rest.Config, namespace string) 
 	}
 	secrets = append(secrets, jwtSecret)
 
-	// Use the shared password for events-stack-db
-	stackDBSecret := createEventStackDBSecretWithPassword(namespace, sharedPassword)
-	secrets = append(secrets, stackDBSecret)
+	// Use the shared password for `krateo-db` secret
+	krateoDbSecret := createKrateoDbSecretWithPassword(namespace, sharedPassword)
+	secrets = append(secrets, krateoDbSecret)
 
-	// Use the same shared password for events-user-secret
-	userSecret := createEventsUserSecretWithPassword(namespace, sharedPassword)
-	secrets = append(secrets, userSecret)
+	// Use the same shared password for `krateo-db-user` secret
+	krateoDbUserSecret := createKrateoDbUserSecretWithPassword(namespace, sharedPassword)
+	secrets = append(secrets, krateoDbUserSecret)
 
 	for _, secret := range secrets {
 		gvk := secret.GetObjectKind().GroupVersionKind()
