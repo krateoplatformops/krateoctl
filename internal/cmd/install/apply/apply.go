@@ -51,6 +51,7 @@ type applyCmd struct {
 	profile        string
 	version        string
 	repository     string
+	installType    string
 	debug          bool
 	initSecrets    bool // Hidden utility flag for generating sample secrets
 	skipValidation bool // Skip configuration validation
@@ -114,6 +115,7 @@ func (c *applyCmd) Usage() string {
 	fmt.Fprint(&wri, "  --repository string   GitHub repository URL for releases (default \"https://github.com/krateoplatformops/releases\")\n")
 	fmt.Fprintf(&wri, "  --config string       path to local configuration file (default \"%s\", used when --version is not set)\n", shared.DefaultConfigPath)
 	fmt.Fprintf(&wri, "  --namespace string    target namespace (default \"%s\")\n", shared.DefaultNamespace)
+	fmt.Fprint(&wri, "  --type string         installation type: nodeport, loadbalancer, or ingress (default \"nodepoint\")\n")
 	fmt.Fprint(&wri, "  --profile string      optional profile name (e.g. dev, prod)\n")
 	fmt.Fprint(&wri, "  --skip-validation     skip configuration validation (useful for emergency recovery)\n")
 	fmt.Fprint(&wri, "  --debug               enable debug-level logging (can also use KRATEOCTL_DEBUG env var)\n\n")
@@ -128,6 +130,10 @@ func (c *applyCmd) Usage() string {
 	fmt.Fprint(&wri, "  krateoctl install apply --version v1.0.0 --repository https://github.com/myorg/krateo-releases\n\n")
 	fmt.Fprint(&wri, "  # Apply using local config file\n")
 	fmt.Fprint(&wri, "  krateoctl install apply --config ./my-krateo.yaml\n\n")
+	fmt.Fprint(&wri, "  # Apply with LoadBalancer installation type\n")
+	fmt.Fprint(&wri, "  krateoctl install apply --config ./krateo.yaml --type loadbalancer\n\n")
+	fmt.Fprint(&wri, "  # Apply with Ingress installation type\n")
+	fmt.Fprint(&wri, "  krateoctl install apply --config ./krateo.yaml --type ingress\n\n")
 	return wri.String()
 }
 
@@ -136,6 +142,7 @@ func (c *applyCmd) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.repository, "repository", "", "GitHub repository URL for releases")
 	f.StringVar(&c.configFile, "config", shared.DefaultConfigPath, "path to local configuration file")
 	f.StringVar(&c.namespace, "namespace", shared.DefaultNamespace, "kubernetes namespace for deployment")
+	f.StringVar(&c.installType, "type", "nodeport", "installation type: nodeport, loadbalancer, or ingress")
 	f.StringVar(&c.profile, "profile", "", "optional profile name")
 	f.BoolVar(&c.skipValidation, "skip-validation", false, "skip configuration validation")
 	f.BoolVar(&c.debug, "debug", false, "enable debug-level logging")

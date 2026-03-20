@@ -31,6 +31,7 @@ type planCmd struct {
 	configFile     string
 	profile        string
 	namespace      string
+	installType    string
 	diffInstalled  bool
 	output         bool
 	version        string
@@ -63,6 +64,8 @@ func (c *planCmd) Usage() string {
 	fmt.Fprint(&wri, "        optional profile name (e.g. dev, prod)\n")
 	fmt.Fprint(&wri, "  --namespace string\n")
 	fmt.Fprintf(&wri, "        namespace where the installation snapshot is stored (default \"%s\")\n", shared.DefaultNamespace)
+	fmt.Fprint(&wri, "  --type string\n")
+	fmt.Fprint(&wri, "        installation type: nodeport, loadbalancer, or ingress (default \"nodeport\")\n")
 	fmt.Fprint(&wri, "  --diff-installed\n")
 	fmt.Fprint(&wri, "        compare computed plan against the stored installation snapshot\n")
 	fmt.Fprint(&wri, "  --output\n")
@@ -94,6 +97,10 @@ func (c *planCmd) Usage() string {
 	fmt.Fprint(&wri, "  krateoctl install plan --config ./my-krateo.yaml\n\n")
 	fmt.Fprint(&wri, "  # Preview with a profile\n")
 	fmt.Fprint(&wri, "  krateoctl install plan --version v1.0.0 --profile dev > plan.yaml\n\n")
+	fmt.Fprint(&wri, "  # Preview with LoadBalancer installation type\n")
+	fmt.Fprint(&wri, "  krateoctl install plan --config ./krateo.yaml --type loadbalancer\n\n")
+	fmt.Fprint(&wri, "  # Preview with Ingress installation type\n")
+	fmt.Fprint(&wri, "  krateoctl install plan --config ./krateo.yaml --type ingress\n\n")
 
 	return wri.String()
 }
@@ -104,6 +111,7 @@ func (c *planCmd) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.configFile, "config", shared.DefaultConfigPath, "path to local configuration file")
 	f.StringVar(&c.profile, "profile", "", "optional profile name")
 	f.StringVar(&c.namespace, "namespace", shared.DefaultNamespace, "kubernetes namespace where the installation snapshot is stored")
+	f.StringVar(&c.installType, "type", "nodeport", "installation type: nodeport, loadbalancer, or ingress")
 	f.BoolVar(&c.diffInstalled, "diff-installed", false, "compare the computed plan with the stored installation snapshot")
 	f.BoolVar(&c.output, "output", false, "output computed plan steps as multi-document YAML")
 	f.BoolVar(&c.skipValidation, "skip-validation", false, "skip configuration validation")

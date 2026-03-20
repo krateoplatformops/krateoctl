@@ -2,6 +2,7 @@ package legacy
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/krateoplatformops/krateoctl/internal/config"
@@ -178,37 +179,141 @@ func isValidKey(key string) bool {
 }
 
 func assignNested(target map[string]any, dottedKey string, value any) {
-	parts := strings.Split(dottedKey, ".")
-	current := target
+	tokens := parsePathTokens(dottedKey)
+	if len(tokens) == 0 {
+		return
+	}
 
-	// Convert string boolean values to actual booleans
-	value = convertStringBool(value)
+	root := any(target)
+	assignPath(&root, tokens, convertStringBool(value))
+}
 
-	for i, part := range parts {
+type pathToken struct {
+	key     string
+	indexes []int
+}
+
+func parsePathTokens(path string) []pathToken {
+	parts := strings.Split(path, ".")
+	out := make([]pathToken, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
 		}
 
-		if i == len(parts)-1 {
-			current[part] = value
-			return
-		}
-
-		next, ok := current[part]
+		token, ok := parsePathToken(part)
 		if !ok {
-			child := make(map[string]any)
-			current[part] = child
-			current = child
-			continue
+			return nil
 		}
-
-		child, ok := next.(map[string]any)
-		if !ok {
-			child = make(map[string]any)
-			current[part] = child
-		}
-		current = child
+		out = append(out, token)
 	}
+	return out
+}
+
+func parsePathToken(part string) (pathToken, bool) {
+	var tok pathToken
+	firstBracket := strings.IndexByte(part, '[')
+	if firstBracket == -1 {
+		tok.key = part
+		return tok, tok.key != ""
+	}
+
+	tok.key = part[:firstBracket]
+	if tok.key == "" {
+		return pathToken{}, false
+	}
+
+	rest := part[firstBracket:]
+	for len(rest) > 0 {
+		if rest[0] != '[' {
+			return pathToken{}, false
+		}
+
+		end := strings.IndexByte(rest, ']')
+		if end <= 1 {
+			return pathToken{}, false
+		}
+
+		idx, err := strconv.Atoi(rest[1:end])
+		if err != nil || idx < 0 {
+			return pathToken{}, false
+		}
+
+		tok.indexes = append(tok.indexes, idx)
+		rest = rest[end+1:]
+	}
+
+	return tok, true
+}
+
+func assignPath(node *any, tokens []pathToken, value any) {
+	if len(tokens) == 0 {
+		*node = value
+		return
+	}
+
+	token := tokens[0]
+	current := ensureNodeMap(node)
+	child := current[token.key]
+
+	if len(token.indexes) > 0 {
+		assignIndexes(&child, token.indexes, tokens[1:], value)
+	} else {
+		assignPath(&child, tokens[1:], value)
+	}
+
+	current[token.key] = child
+}
+
+func assignIndexes(node *any, indexes []int, remaining []pathToken, value any) {
+	slice := ensureNodeSlice(node)
+	idx := indexes[0]
+	slice = ensureSliceLen(slice, idx+1)
+
+	elem := slice[idx]
+	if len(indexes) == 1 {
+		if len(remaining) == 0 {
+			elem = value
+		} else {
+			assignPath(&elem, remaining, value)
+		}
+	} else {
+		assignIndexes(&elem, indexes[1:], remaining, value)
+	}
+
+	slice[idx] = elem
+	*node = slice
+}
+
+func ensureNodeMap(node *any) map[string]any {
+	if existing, ok := (*node).(map[string]any); ok && existing != nil {
+		return existing
+	}
+
+	created := make(map[string]any)
+	*node = created
+	return created
+}
+
+func ensureNodeSlice(node *any) []any {
+	if existing, ok := (*node).([]any); ok && existing != nil {
+		return existing
+	}
+
+	created := make([]any, 0)
+	*node = created
+	return created
+}
+
+func ensureSliceLen(in []any, size int) []any {
+	if len(in) >= size {
+		return in
+	}
+
+	out := make([]any, size)
+	copy(out, in)
+	return out
 }
 
 // convertStringBool converts string representations of booleans to actual booleans.

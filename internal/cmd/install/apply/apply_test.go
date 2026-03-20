@@ -18,92 +18,89 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-func TestApplyExecuteSuccess(t *testing.T) {
-	cfg := writeApplyConfig(t, "steps:\n  - id: step-one\n    type: chart\n    with:\n      releaseName: demo\n")
-
-	runner := &stubWorkflow{}
-	store := &stubStateStore{}
-	cmd := &applyCmd{
-		configFile: cfg,
-		namespace:  "test-ns",
-		restConfigFn: func() (*rest.Config, error) {
-			return &rest.Config{}, nil
+func TestApplyExecute(t *testing.T) {
+	tests := []struct {
+		name               string
+		configData         string
+		errEvaluator       func([]workflows.StepResult[any]) error
+		wantStatus         subcommands.ExitStatus
+		wantWorkflowCalled bool
+		wantStateSaved     bool
+		wantRestCalled     bool
+	}{
+		{
+			name:               "returns success and saves state when workflow succeeds",
+			configData:         "componentsDefinition:\n  demo:\n    steps:\n      - step-one\nsteps:\n  - id: step-one\n    type: chart\n    with:\n      releaseName: demo\n",
+			wantStatus:         subcommands.ExitSuccess,
+			wantWorkflowCalled: true,
+			wantStateSaved:     true,
+			wantRestCalled:     true,
 		},
-		getterFactory: func(*rest.Config) (*getter.Getter, error) {
-			return &getter.Getter{}, nil
+		{
+			name:       "returns failure when workflow evaluation fails",
+			configData: "componentsDefinition:\n  demo:\n    steps:\n      - failing\nsteps:\n  - id: failing\n    type: chart\n    with:\n      releaseName: demo\n",
+			errEvaluator: func([]workflows.StepResult[any]) error {
+				return errors.New("workflow failure")
+			},
+			wantStatus:         subcommands.ExitFailure,
+			wantWorkflowCalled: true,
+			wantStateSaved:     false,
+			wantRestCalled:     true,
 		},
-		applierFactory: func(*rest.Config) (*applier.Applier, error) {
-			return &applier.Applier{}, nil
-		},
-		deletorFactory: func(*rest.Config) (*deletor.Deletor, error) {
-			return &deletor.Deletor{}, nil
-		},
-		workflowFactory: func(workflows.Opts) (workflowRunner, error) {
-			return runner, nil
-		},
-		stateFactory: func(*rest.Config, string) (state.Store, error) { return store, nil },
-		ensureCRDFn:  func(context.Context, *rest.Config) error { return nil },
-		stateName:    "test-install",
-	}
-
-	status := cmd.Execute(context.Background(), flag.NewFlagSet("apply", flag.ContinueOnError))
-	if status != subcommands.ExitSuccess {
-		t.Fatalf("expected success, got %v", status)
-	}
-
-	if !runner.called {
-		t.Fatal("expected workflow runner to be invoked")
-	}
-
-	if !store.saved {
-		t.Fatal("expected installation snapshot to be saved")
-	}
-}
-
-func TestApplyExecuteFailureFromWorkflow(t *testing.T) {
-	cfg := writeApplyConfig(t, "steps:\n  - id: failing\n    type: chart\n    with:\n      releaseName: demo\n")
-
-	cmdErr := errors.New("workflow failure")
-	cmd := &applyCmd{
-		configFile:      cfg,
-		namespace:       "test-ns",
-		restConfigFn:    func() (*rest.Config, error) { return &rest.Config{}, nil },
-		getterFactory:   func(*rest.Config) (*getter.Getter, error) { return &getter.Getter{}, nil },
-		applierFactory:  func(*rest.Config) (*applier.Applier, error) { return &applier.Applier{}, nil },
-		deletorFactory:  func(*rest.Config) (*deletor.Deletor, error) { return &deletor.Deletor{}, nil },
-		workflowFactory: func(workflows.Opts) (workflowRunner, error) { return &stubWorkflow{}, nil },
-		stateFactory:    func(*rest.Config, string) (state.Store, error) { return &stubStateStore{}, nil },
-		ensureCRDFn:     func(context.Context, *rest.Config) error { return nil },
-		errEvaluator: func([]workflows.StepResult[any]) error {
-			return cmdErr
+		{
+			name:           "skips cluster access when no steps are defined",
+			configData:     "modules: {}\n",
+			wantStatus:     subcommands.ExitSuccess,
+			wantRestCalled: false,
 		},
 	}
 
-	status := cmd.Execute(context.Background(), flag.NewFlagSet("apply", flag.ContinueOnError))
-	if status != subcommands.ExitFailure {
-		t.Fatalf("expected failure, got %v", status)
-	}
-}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := writeApplyConfig(t, tc.configData)
 
-func TestApplyExecuteSkipsClusterWhenNoSteps(t *testing.T) {
-	cfg := writeApplyConfig(t, "modules: {}\n")
+			runner := &stubWorkflow{}
+			store := &stubStateStore{}
+			restCalled := false
+			cmd := &applyCmd{
+				configFile: cfg,
+				namespace:  "test-ns",
+				restConfigFn: func() (*rest.Config, error) {
+					restCalled = true
+					return &rest.Config{}, nil
+				},
+				getterFactory: func(*rest.Config) (*getter.Getter, error) {
+					return &getter.Getter{}, nil
+				},
+				applierFactory: func(*rest.Config) (*applier.Applier, error) {
+					return &applier.Applier{}, nil
+				},
+				deletorFactory: func(*rest.Config) (*deletor.Deletor, error) {
+					return &deletor.Deletor{}, nil
+				},
+				workflowFactory: func(workflows.Opts) (workflowRunner, error) {
+					return runner, nil
+				},
+				stateFactory: func(*rest.Config, string) (state.Store, error) { return store, nil },
+				ensureCRDFn:  func(context.Context, *rest.Config) error { return nil },
+				errEvaluator: tc.errEvaluator,
+				stateName:    "test-install",
+			}
 
-	called := false
-	cmd := &applyCmd{
-		configFile: cfg,
-		restConfigFn: func() (*rest.Config, error) {
-			called = true
-			return &rest.Config{}, nil
-		},
-	}
-
-	status := cmd.Execute(context.Background(), flag.NewFlagSet("apply", flag.ContinueOnError))
-	if status != subcommands.ExitSuccess {
-		t.Fatalf("expected success, got %v", status)
-	}
-
-	if called {
-		t.Fatal("restConfigFn should not be invoked when there are no steps")
+			status := cmd.Execute(context.Background(), flag.NewFlagSet("apply", flag.ContinueOnError))
+			if status != tc.wantStatus {
+				t.Fatalf("Execute() = %v, want %v", status, tc.wantStatus)
+			}
+			if runner.called != tc.wantWorkflowCalled {
+				t.Fatalf("workflow called = %v, want %v", runner.called, tc.wantWorkflowCalled)
+			}
+			if store.saved != tc.wantStateSaved {
+				t.Fatalf("state saved = %v, want %v", store.saved, tc.wantStateSaved)
+			}
+			if restCalled != tc.wantRestCalled {
+				t.Fatalf("restConfigFn called = %v, want %v", restCalled, tc.wantRestCalled)
+			}
+		})
 	}
 }
 

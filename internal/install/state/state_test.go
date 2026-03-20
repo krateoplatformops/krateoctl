@@ -1,17 +1,41 @@
 package state
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestMergeFinalizers(t *testing.T) {
-	existing := []string{"alpha", InstallationFinalizer}
-	desired := []string{InstallationFinalizer, "beta"}
-
-	merged := mergeFinalizers(existing, desired)
-	if len(merged) != 3 {
-		t.Fatalf("expected 3 finalizers, got %v", merged)
+	tests := []struct {
+		name     string
+		existing []string
+		desired  []string
+		want     []string
+	}{
+		{
+			name:     "preserves existing order and appends new finalizers once",
+			existing: []string{"alpha", InstallationFinalizer},
+			desired:  []string{InstallationFinalizer, "beta"},
+			want:     []string{"alpha", InstallationFinalizer, "beta"},
+		},
+		{
+			name:    "returns desired finalizers when none exist",
+			desired: []string{InstallationFinalizer, "beta"},
+			want:    []string{InstallationFinalizer, "beta"},
+		},
+		{
+			name:     "keeps existing entries when desired is empty",
+			existing: []string{"alpha"},
+			want:     []string{"alpha"},
+		},
 	}
 
-	if merged[0] != "alpha" || merged[1] != InstallationFinalizer || merged[2] != "beta" {
-		t.Fatalf("finalizers not merged deterministically: %v", merged)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			merged := mergeFinalizers(tc.existing, tc.desired)
+			if !reflect.DeepEqual(merged, tc.want) {
+				t.Fatalf("mergeFinalizers(%v, %v) = %v, want %v", tc.existing, tc.desired, merged, tc.want)
+			}
+		})
 	}
 }

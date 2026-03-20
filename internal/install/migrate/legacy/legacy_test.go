@@ -201,3 +201,97 @@ spec:
 		t.Errorf("non-boolean string should remain as string, got %T: %v", values["imagePullPolicy"], values["imagePullPolicy"])
 	}
 }
+
+func TestConvertSetArraySyntaxToLists(t *testing.T) {
+	legacyYAML := `
+apiVersion: krateo.io/v1alpha1
+kind: KrateoPlatformOps
+spec:
+  steps:
+  - id: install-authn
+    type: chart
+    with:
+      name: authn
+      repository: https://charts.krateo.io
+      set:
+      - name: ingress.hosts[0].host
+        value: authn.krateoplatformops.io
+      - name: ingress.hosts[0].paths[0].path
+        value: /
+      - name: ingress.hosts[0].paths[0].pathType
+        value: Prefix
+      - name: service.ports[0].port
+        value: "80"
+      version: 0.1.0
+`
+
+	var obj map[string]any
+	if err := yaml.Unmarshal([]byte(legacyYAML), &obj); err != nil {
+		t.Fatalf("unmarshal legacy yaml: %v", err)
+	}
+
+	doc, err := ConvertDocument(obj, "krateo-system")
+	if err != nil {
+		t.Fatalf("ConvertDocument() error = %v", err)
+	}
+
+	values, ok := doc.Steps[0].With["values"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected values map")
+	}
+
+	ingress, ok := values["ingress"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected ingress map, got %T", values["ingress"])
+	}
+
+	hosts, ok := ingress["hosts"].([]any)
+	if !ok || len(hosts) != 1 {
+		t.Fatalf("expected one ingress host entry, got %T: %#v", ingress["hosts"], ingress["hosts"])
+	}
+
+	host0, ok := hosts[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected host entry to be a map, got %T", hosts[0])
+	}
+
+	if got := host0["host"]; got != "authn.krateoplatformops.io" {
+		t.Fatalf("unexpected host value: %v", got)
+	}
+
+	paths, ok := host0["paths"].([]any)
+	if !ok || len(paths) != 1 {
+		t.Fatalf("expected one path entry, got %T: %#v", host0["paths"], host0["paths"])
+	}
+
+	path0, ok := paths[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected path entry to be a map, got %T", paths[0])
+	}
+
+	if got := path0["path"]; got != "/" {
+		t.Fatalf("unexpected path value: %v", got)
+	}
+	if got := path0["pathType"]; got != "Prefix" {
+		t.Fatalf("unexpected pathType value: %v", got)
+	}
+
+	service, ok := values["service"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected service map, got %T", values["service"])
+	}
+
+	ports, ok := service["ports"].([]any)
+	if !ok || len(ports) != 1 {
+		t.Fatalf("expected one service port entry, got %T: %#v", service["ports"], service["ports"])
+	}
+
+	port0, ok := ports[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected port entry to be a map, got %T", ports[0])
+	}
+
+	if got := port0["port"]; got != "80" {
+		t.Fatalf("unexpected port value: %v", got)
+	}
+}

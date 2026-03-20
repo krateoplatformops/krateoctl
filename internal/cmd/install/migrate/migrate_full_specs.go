@@ -53,6 +53,7 @@ func CommandFullSpecs() subcommands.Command {
 }
 
 type migrateFullSpecsCmd struct {
+	installType         string
 	name                string
 	namespace           string
 	outputPath          string
@@ -90,6 +91,7 @@ func (c *migrateFullSpecsCmd) Usage() string {
 	fmt.Fprintf(buf, "  --namespace string\n        namespace that contains the KrateoPlatformOps resource (default \"%s\")\n", shared.DefaultNamespace)
 	buf.WriteString("  --name string\n        name of the KrateoPlatformOps resource (default \"krateo\")\n")
 	fmt.Fprintf(buf, "  --output string\n        path to write the generated krateo.yaml (default \"%s\")\n", shared.DefaultConfigPath)
+	buf.WriteString("  --type string\n        installation type: nodeport, loadbalancer, or ingress (default \"nodeport\")\n")
 	buf.WriteString("  --installer-namespace string\n        namespace where the installer is deployed (default: same as --namespace)\n")
 	buf.WriteString("  --installer-release string\n        Helm release name for the installer (default \"installer\")\n")
 	buf.WriteString("  --installer-crd-release string\n        Helm release name for the installer CRD (default \"installer-crd\")\n")
@@ -103,6 +105,7 @@ func (c *migrateFullSpecsCmd) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.namespace, "namespace", shared.DefaultNamespace, "namespace that contains the KrateoPlatformOps resource")
 	f.StringVar(&c.name, "name", "krateo", "name of the KrateoPlatformOps resource")
 	f.StringVar(&c.outputPath, "output", shared.DefaultConfigPath, "path to write the generated krateo.yaml")
+	f.StringVar(&c.installType, "type", "nodeport", "installation type: nodeport, loadbalancer, or ingress")
 	f.StringVar(&c.installerNamespace, "installer-namespace", "", "namespace where the installer is deployed")
 	f.StringVar(&c.installerRelease, "installer-release", "installer", "Helm release name for the installer")
 	f.StringVar(&c.installerCRDRelease, "installer-crd-release", "installer-crd", "Helm release name for the installer CRD")
@@ -188,8 +191,9 @@ func (c *migrateFullSpecsCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ..
 	}
 
 	// Step 1: Fetch legacy resource
+	var legacyObj *unstructured.Unstructured
 	logger.Info("Step 1/6: Fetching legacy KrateoPlatformOps CR...")
-	legacyObj, err := c.fetchLegacyResource(ctx, dyn)
+	legacyObj, err = c.fetchLegacyResource(ctx, dyn)
 	if err != nil {
 		logger.Error("Failed to read KrateoPlatformOps resource: %v", err)
 		return subcommands.ExitFailure
@@ -204,7 +208,7 @@ func (c *migrateFullSpecsCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ..
 		return subcommands.ExitFailure
 	}
 
-	if err := c.applyDefaultComponents(doc); err != nil {
+	if err := c.applyDefaultComponents(doc, c.installType); err != nil {
 		logger.Error("Failed to load components definition: %v", err)
 		return subcommands.ExitFailure
 	}
@@ -518,12 +522,24 @@ func (c *migrateFullSpecsCmd) writeOutput(data []byte) error {
 	return c.writeFile(c.outputPath, data, 0o644)
 }
 
-func (c *migrateFullSpecsCmd) applyDefaultComponents(doc *config.Document) error {
+func (c *migrateFullSpecsCmd) applyDefaultComponents(doc *config.Document, installType string) error {
 	if doc == nil {
 		return fmt.Errorf("document is nil")
 	}
 
-	components, err := loadComponentsDefinition(componentsDefinitionYAML)
+	var componentData []byte
+	switch installType {
+	case "loadbalancer":
+		componentData = componentsDefinitionLoadbalancerYAML
+	case "ingress":
+		componentData = componentsDefinitionIngressYAML
+	case "nodeport", "":
+		componentData = componentsDefinitionYAML
+	default:
+		return fmt.Errorf("unknown installation type: %s (expected: nodeport, loadbalancer, or ingress)", installType)
+	}
+
+	components, err := loadComponentsDefinition(componentData)
 	if err != nil {
 		return err
 	}

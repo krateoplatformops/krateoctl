@@ -10,34 +10,44 @@ import (
 	"github.com/krateoplatformops/krateoctl/internal/subcommands"
 )
 
-func TestPlanExecuteSuccess(t *testing.T) {
-	cfg := writeTestConfig(t, "steps:\n  - id: step-one\n    type: chart\n    with:\n      releaseName: demo\n")
-
-	cmd := &planCmd{configFile: cfg}
-	status := cmd.Execute(context.Background(), flag.NewFlagSet("plan", flag.ContinueOnError))
-
-	if status != subcommands.ExitSuccess {
-		t.Fatalf("expected success, got %v", status)
+func TestPlanExecute(t *testing.T) {
+	tests := []struct {
+		name       string
+		configData string
+		missing    bool
+		wantStatus subcommands.ExitStatus
+	}{
+		{
+			name:       "returns success with steps",
+			configData: "componentsDefinition:\n  demo:\n    steps:\n      - step-one\nsteps:\n  - id: step-one\n    type: chart\n    with:\n      releaseName: demo\n",
+			wantStatus: subcommands.ExitSuccess,
+		},
+		{
+			name:       "returns success when no steps are defined",
+			configData: "modules: {}\n",
+			wantStatus: subcommands.ExitSuccess,
+		},
+		{
+			name:       "returns failure when config is missing",
+			missing:    true,
+			wantStatus: subcommands.ExitFailure,
+		},
 	}
-}
 
-func TestPlanExecuteNoSteps(t *testing.T) {
-	cfg := writeTestConfig(t, "modules: {}\n")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "krateo.yaml")
+			if !tc.missing {
+				configPath = writeTestConfig(t, tc.configData)
+			}
 
-	cmd := &planCmd{configFile: cfg}
-	status := cmd.Execute(context.Background(), flag.NewFlagSet("plan", flag.ContinueOnError))
+			cmd := &planCmd{configFile: configPath}
+			status := cmd.Execute(context.Background(), flag.NewFlagSet("plan", flag.ContinueOnError))
 
-	if status != subcommands.ExitSuccess {
-		t.Fatalf("expected success when no steps are defined, got %v", status)
-	}
-}
-
-func TestPlanExecuteMissingConfig(t *testing.T) {
-	cmd := &planCmd{configFile: filepath.Join(t.TempDir(), "missing.yaml")}
-	status := cmd.Execute(context.Background(), flag.NewFlagSet("plan", flag.ContinueOnError))
-
-	if status != subcommands.ExitFailure {
-		t.Fatalf("expected failure for missing config file, got %v", status)
+			if status != tc.wantStatus {
+				t.Fatalf("Execute() = %v, want %v", status, tc.wantStatus)
+			}
+		})
 	}
 }
 

@@ -34,6 +34,12 @@ type fileWriter func(string, []byte, os.FileMode) error
 //go:embed assets/componentsDefinition.yaml
 var componentsDefinitionYAML []byte
 
+//go:embed assets/componentsDefinition-loadbalancer.yaml
+var componentsDefinitionLoadbalancerYAML []byte
+
+//go:embed assets/componentsDefinition-ingress.yaml
+var componentsDefinitionIngressYAML []byte
+
 var legacyGVRs = []schema.GroupVersionResource{
 	{Group: "krateo.io", Version: "v1alpha1", Resource: "krateoplatformops"},
 	{Group: "krateo.io", Version: "v1alpha1", Resource: "krateoplatformopses"},
@@ -45,11 +51,12 @@ func Command() subcommands.Command {
 }
 
 type migrateCmd struct {
-	name       string
-	namespace  string
-	outputPath string
-	force      bool
-	debug      bool
+	installType string
+	name        string
+	namespace   string
+	outputPath  string
+	force       bool
+	debug       bool
 
 	restConfigFn   restConfigProvider
 	dynamicFactory dynamicFactory
@@ -67,6 +74,7 @@ func (c *migrateCmd) Usage() string {
 	buf.WriteString("\n\nUSAGE:\n\n")
 	buf.WriteString("  krateoctl install migrate [FLAGS]\n\n")
 	buf.WriteString("FLAGS:\n\n")
+	buf.WriteString("  --type string\n        installation type: nodeport, loadbalancer, or ingress (default \"nodeport\")\n")
 	fmt.Fprintf(buf, "  --namespace string\n        namespace that contains the KrateoPlatformOps resource (default \"%s\")\n", shared.DefaultNamespace)
 	buf.WriteString("  --name string\n        name of the KrateoPlatformOps resource (default \"krateo\")\n")
 	fmt.Fprintf(buf, "  --output string\n        path to write the generated krateo.yaml (default \"%s\")\n", shared.DefaultConfigPath)
@@ -77,6 +85,7 @@ func (c *migrateCmd) Usage() string {
 }
 
 func (c *migrateCmd) SetFlags(f *flag.FlagSet) {
+	f.StringVar(&c.installType, "type", "nodeport", "installation type: nodeport, loadbalancer, or ingress")
 	f.StringVar(&c.namespace, "namespace", shared.DefaultNamespace, "namespace that contains the KrateoPlatformOps resource")
 	f.StringVar(&c.name, "name", "krateo", "name of the KrateoPlatformOps resource")
 	f.StringVar(&c.outputPath, "output", shared.DefaultConfigPath, "path to write the generated krateo.yaml")
@@ -126,6 +135,7 @@ func (c *migrateCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ...any) sub
 		return subcommands.ExitFailure
 	}
 
+	logger.Info("Fetching legacy KrateoPlatformOps from cluster: %s/%s", c.namespace, c.name)
 	legacyObj, err := c.fetchLegacyResource(ctx, dyn)
 	if err != nil {
 		logger.Error("Failed to read KrateoPlatformOps resource: %v", err)
@@ -138,7 +148,7 @@ func (c *migrateCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ...any) sub
 		return subcommands.ExitFailure
 	}
 
-	if err := c.applyDefaultComponents(doc); err != nil {
+	if err := c.applyDefaultComponents(doc, c.installType); err != nil {
 		logger.Error("Failed to load components definition: %v", err)
 		return subcommands.ExitFailure
 	}
@@ -206,12 +216,24 @@ func (c *migrateCmd) writeOutput(data []byte) error {
 	return c.writeFile(c.outputPath, data, 0o644)
 }
 
-func (c *migrateCmd) applyDefaultComponents(doc *config.Document) error {
+func (c *migrateCmd) applyDefaultComponents(doc *config.Document, installType string) error {
 	if doc == nil {
 		return fmt.Errorf("document is nil")
 	}
 
-	components, err := loadComponentsDefinition(componentsDefinitionYAML)
+	var componentData []byte
+	switch installType {
+	case "loadbalancer":
+		componentData = componentsDefinitionLoadbalancerYAML
+	case "ingress":
+		componentData = componentsDefinitionIngressYAML
+	case "nodeport", "":
+		componentData = componentsDefinitionYAML
+	default:
+		return fmt.Errorf("unknown installation type: %s (expected: nodeport, loadbalancer, or ingress)", installType)
+	}
+
+	components, err := loadComponentsDefinition(componentData)
 	if err != nil {
 		return err
 	}

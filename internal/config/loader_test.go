@@ -6,12 +6,8 @@ import (
 	"testing"
 )
 
-func TestLoader(t *testing.T) {
-	// Create a temporary krateo.yaml
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "krateo.yaml")
-
-	configContent := `
+const (
+	testLoaderConfig = `
 modules:
   frontend:
     enabled: true
@@ -26,145 +22,111 @@ modules:
       name: "finops"
       namespace: "krateo"
 `
-
-	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
-		t.Fatalf("failed to write config file: %v", err)
-	}
-
-	// Test load
-	loader := NewLoader(LoadOptions{ConfigPath: configPath})
-	data, err := loader.Load()
-	if err != nil {
-		t.Fatalf("failed to load config: %v", err)
-	}
-
-	// Test config
-	cfg, err := NewConfig(data)
-	if err != nil {
-		t.Fatalf("failed to create config: %v", err)
-	}
-	modules, err := cfg.GetModules()
-	if err != nil {
-		t.Fatalf("failed to get modules: %v", err)
-	}
-
-	if len(modules) != 2 {
-		t.Fatalf("expected 2 modules, got %d", len(modules))
-	}
-
-	// Test validator still runs without module dependencies
-	validator := NewValidator(cfg)
-	if err := validator.Validate(); err != nil {
-		t.Fatalf("validation failed: %v", err)
-	}
-
-	// No more expectation that finops is auto‑disabled
-}
-
-func TestLoaderProfileNotFound(t *testing.T) {
-	// Create temporary files
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "krateo.yaml")
-	overridesPath := filepath.Join(tmpDir, "krateo-overrides.yaml")
-
-	configContent := `
-modules:
-  frontend:
-    enabled: true
-    chart:
-      repository: "https://charts.example.com"
-      name: "frontend"
-      namespace: "krateo"
-`
-
-	overridesContent := `
+	testLoaderOverrides = `
 components:
   test-component:
     enabled: false
 `
+	testLoaderProfile = `
+components:
+  test-component:
+    enabled: true
+`
+)
 
-	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
-		t.Fatalf("failed to write config file: %v", err)
+func TestLoader(t *testing.T) {
+	tests := []struct {
+		name              string
+		profile           string
+		writeBaseOverride bool
+		writeProfile      bool
+		wantModules       int
+		wantErrContains   []string
+	}{
+		{
+			name:        "loads base config",
+			wantModules: 2,
+		},
+		{
+			name:              "fails when profile file is missing",
+			profile:           "non-existent",
+			writeBaseOverride: true,
+			wantErrContains: []string{
+				"non-existent",
+				"krateo-overrides.non-existent.yaml",
+				"install plan --help",
+			},
+		},
+		{
+			name:              "loads profile override from file",
+			profile:           "dev",
+			writeBaseOverride: true,
+			writeProfile:      true,
+		},
 	}
 
-	if err := os.WriteFile(overridesPath, []byte(overridesContent), 0644); err != nil {
-		t.Fatalf("failed to write overrides file: %v", err)
-	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			configPath := filepath.Join(tmpDir, "krateo.yaml")
+			overridesPath := filepath.Join(tmpDir, "krateo-overrides.yaml")
+			profilePath := filepath.Join(tmpDir, "krateo-overrides.dev.yaml")
 
-	// Test load with non-existent profile
-	loader := NewLoader(LoadOptions{
-		ConfigPath:        configPath,
-		UserOverridesPath: overridesPath,
-		Profile:           "non-existent",
-	})
+			writeTestFile(t, configPath, testLoaderConfig)
+			if tc.writeBaseOverride {
+				writeTestFile(t, overridesPath, testLoaderOverrides)
+			}
+			if tc.writeProfile {
+				writeTestFile(t, profilePath, testLoaderProfile)
+			}
 
-	_, err := loader.Load()
-	if err == nil {
-		t.Fatalf("expected error for non-existent profile, got nil")
-	}
+			loader := NewLoader(LoadOptions{
+				ConfigPath:        configPath,
+				UserOverridesPath: overridesPath,
+				Profile:           tc.profile,
+			})
 
-	errMsg := err.Error()
-	if !contains(errMsg, "non-existent") {
-		t.Fatalf("expected error mentioning non-existent profile, got: %v", err)
-	}
-	if !contains(errMsg, "krateo-overrides.non-existent.yaml") {
-		t.Fatalf("expected error suggesting file location, got: %v", err)
-	}
-	if !contains(errMsg, "install plan --help") {
-		t.Fatalf("expected error suggesting help command, got: %v", err)
+			data, err := loader.Load()
+			if len(tc.wantErrContains) > 0 {
+				if err == nil {
+					t.Fatal("Load() error = nil, want profile resolution error")
+				}
+				for _, want := range tc.wantErrContains {
+					if !contains(err.Error(), want) {
+						t.Fatalf("Load() error %q does not contain %q", err.Error(), want)
+					}
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load() unexpected error: %v", err)
+			}
+
+			cfg, err := NewConfig(data)
+			if err != nil {
+				t.Fatalf("NewConfig() error: %v", err)
+			}
+
+			modules, err := cfg.GetModules()
+			if err != nil {
+				t.Fatalf("GetModules() error: %v", err)
+			}
+			if tc.wantModules > 0 && len(modules) != tc.wantModules {
+				t.Fatalf("GetModules() returned %d modules, want %d", len(modules), tc.wantModules)
+			}
+
+			validator := NewValidator(cfg)
+			if err := validator.Validate(); err != nil {
+				t.Fatalf("Validate() error: %v", err)
+			}
+		})
 	}
 }
 
-func TestLoaderProfileFromFile(t *testing.T) {
-	// Create temporary files
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "krateo.yaml")
-	overridesPath := filepath.Join(tmpDir, "krateo-overrides.yaml")
-	profilePath := filepath.Join(tmpDir, "krateo-overrides.dev.yaml")
+func writeTestFile(t *testing.T, path string, data string) {
+	t.Helper()
 
-	configContent := `
-modules:
-  frontend:
-    enabled: true
-    chart:
-      repository: "https://charts.example.com"
-      name: "frontend"
-      namespace: "krateo"
-`
-
-	overridesContent := `
-components:
-  test-component:
-    enabled: false
-`
-
-	profileContent := `
-components:
-  test-component:
-    enabled: true
-`
-
-	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
-		t.Fatalf("failed to write config file: %v", err)
-	}
-
-	if err := os.WriteFile(overridesPath, []byte(overridesContent), 0644); err != nil {
-		t.Fatalf("failed to write overrides file: %v", err)
-	}
-
-	if err := os.WriteFile(profilePath, []byte(profileContent), 0644); err != nil {
-		t.Fatalf("failed to write profile file: %v", err)
-	}
-
-	// Test load with existing profile
-	loader := NewLoader(LoadOptions{
-		ConfigPath:        configPath,
-		UserOverridesPath: overridesPath,
-		Profile:           "dev",
-	})
-
-	_, err := loader.Load()
-	if err != nil {
-		t.Fatalf("failed to load with valid profile: %v", err)
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatalf("failed to write %s: %v", path, err)
 	}
 }
