@@ -1,0 +1,219 @@
+package lifecycle
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/krateoplatformops/krateoctl/internal/dynamic/applier"
+	"github.com/krateoplatformops/krateoctl/internal/dynamic/getter"
+	"github.com/krateoplatformops/krateoctl/internal/ui"
+	"github.com/krateoplatformops/krateoctl/internal/util/kube"
+	"github.com/krateoplatformops/krateoctl/internal/util/remote"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	kyaml "k8s.io/apimachinery/pkg/util/yaml"
+	"k8s.io/client-go/rest"
+)
+
+type GetterFactory func(*rest.Config) (*getter.Getter, error)
+
+type Manager struct {
+	namespace     string
+	getterFactory GetterFactory
+}
+
+func NewManager(namespace string, getterFactory GetterFactory) *Manager {
+	return &Manager{
+		namespace:     namespace,
+		getterFactory: getterFactory,
+	}
+}
+
+func (m *Manager) Apply(ctx context.Context, applierClient *applier.Applier, logger *ui.Logger, phase, version, repository, configFile string, rc *rest.Config, jobNameSuffix string) error {
+	manifests, err := m.loadManifests(ctx, logger, phase, version, repository, configFile)
+	if err != nil {
+		return err
+	}
+	if len(manifests) == 0 {
+		logger.Info("ℹ No %s manifests found", phase)
+		return nil
+	}
+
+	logger.Info("⚡ Applying %d %s manifests...", len(manifests), phase)
+
+	var jobsToWait []*unstructured.Unstructured
+	for _, manifest := range manifests {
+		substituteTemplateVariables(manifest.UnstructuredContent(), m.namespace, jobNameSuffix)
+
+		if manifest.GetNamespace() == "" && !isClusterScoped(manifest.GetKind()) {
+			manifest.SetNamespace(m.namespace)
+		}
+
+		opts := applier.ApplyOptions{
+			GVK:       manifest.GroupVersionKind(),
+			Namespace: manifest.GetNamespace(),
+			Name:      manifest.GetName(),
+		}
+
+		if err := applierClient.Apply(ctx, manifest.UnstructuredContent(), opts); err != nil {
+			return fmt.Errorf("apply %s %s/%s: %w", manifest.GetKind(), manifest.GetNamespace(), manifest.GetName(), err)
+		}
+
+		logger.Info("✓ Applied %s %s/%s", manifest.GetKind(), manifest.GetNamespace(), manifest.GetName())
+		if manifest.GetKind() == "Job" {
+			jobsToWait = append(jobsToWait, manifest)
+		}
+	}
+
+	if len(jobsToWait) == 0 {
+		return nil
+	}
+
+	return m.waitForJobs(ctx, logger, jobsToWait, rc)
+}
+
+func (m *Manager) loadManifests(ctx context.Context, logger *ui.Logger, phase, version, repository, configFile string) ([]*unstructured.Unstructured, error) {
+	if version != "" {
+		baseRepo := repository
+		if baseRepo == "" {
+			baseRepo = remote.DefaultRepository
+		}
+		filename := fmt.Sprintf("%s.yaml", phase)
+		logger.Info("\n📍 Checking %s manifests from remote: %s/%s/%s", phase, baseRepo, version, filename)
+
+		manifests, err := loadRemoteManifests(ctx, baseRepo, version, phase)
+		if err != nil || len(manifests) == 0 {
+			logger.Info("ℹ No %s manifests found (expected)", phase)
+			return nil, nil
+		}
+		return manifests, nil
+	}
+
+	configDir := "."
+	if configFile != "" {
+		configDir = filepath.Dir(configFile)
+	}
+	manifestsPath := filepath.Join(configDir, fmt.Sprintf("%s.yaml", phase))
+	logger.Info("\n📍 Checking %s manifests locally: %s", phase, manifestsPath)
+
+	manifests, err := loadLocalManifestsFile(manifestsPath)
+	if err != nil || len(manifests) == 0 {
+		logger.Info("ℹ No %s manifests found (expected)", phase)
+		return nil, nil
+	}
+
+	return manifests, nil
+}
+
+func loadLocalManifestsFile(filePath string) ([]*unstructured.Unstructured, error) {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read manifest file %s: %w", filePath, err)
+	}
+
+	return parseManifests(content, filePath)
+}
+
+func loadRemoteManifests(ctx context.Context, repository, version, phase string) ([]*unstructured.Unstructured, error) {
+	filename := fmt.Sprintf("%s.yaml", phase)
+	fetcher := remote.NewFetcher()
+	content, err := fetcher.FetchFile(remote.FetchOptions{
+		Repository: repository,
+		Version:    version,
+		Filename:   filename,
+		Timeout:    remote.DefaultTimeout,
+	})
+	if err != nil {
+		return nil, nil
+	}
+
+	_ = ctx
+	return parseManifests(content, fmt.Sprintf("%s/%s", version, filename))
+}
+
+func (m *Manager) waitForJobs(ctx context.Context, logger *ui.Logger, jobs []*unstructured.Unstructured, rc *rest.Config) error {
+	g, err := m.getterFactory(rc)
+	if err != nil {
+		return fmt.Errorf("initialize getter for Job monitoring: %w", err)
+	}
+
+	waiter := kube.NewJobWaiter(g)
+	logger.Info("\n⏳ Waiting for %d Job(s) to complete (max 5 minutes)...", len(jobs))
+
+	for _, job := range jobs {
+		if err := waiter.Wait(ctx, job.GetNamespace(), job.GetName()); err != nil {
+			return fmt.Errorf("Job %s/%s failed: %w", job.GetNamespace(), job.GetName(), err)
+		}
+		logger.Info("✓ Job %s/%s completed successfully", job.GetNamespace(), job.GetName())
+	}
+
+	logger.Info("✓ All Jobs completed successfully")
+	return nil
+}
+
+func substituteTemplateVariables(value any, namespace string, jobNameSuffix string) {
+	switch v := value.(type) {
+	case map[string]any:
+		for key, item := range v {
+			switch itemValue := item.(type) {
+			case string:
+				replaced := strings.ReplaceAll(itemValue, "{{ .Namespace }}", namespace)
+				replaced = strings.ReplaceAll(replaced, "{{ .JobNameSuffix }}", jobNameSuffix)
+				v[key] = replaced
+			default:
+				substituteTemplateVariables(itemValue, namespace, jobNameSuffix)
+			}
+		}
+	case []any:
+		for i, item := range v {
+			switch itemValue := item.(type) {
+			case string:
+				replaced := strings.ReplaceAll(itemValue, "{{ .Namespace }}", namespace)
+				replaced = strings.ReplaceAll(replaced, "{{ .JobNameSuffix }}", jobNameSuffix)
+				v[i] = replaced
+			default:
+				substituteTemplateVariables(itemValue, namespace, jobNameSuffix)
+			}
+		}
+	}
+}
+
+func isClusterScoped(kind string) bool {
+	clusterScopedKinds := map[string]bool{
+		"ClusterRole":              true,
+		"ClusterRoleBinding":       true,
+		"Namespace":                true,
+		"CustomResourceDefinition": true,
+		"PersistentVolume":         true,
+	}
+	return clusterScopedKinds[kind]
+}
+
+func parseManifests(content []byte, source string) ([]*unstructured.Unstructured, error) {
+	var manifests []*unstructured.Unstructured
+	decoder := kyaml.NewYAMLOrJSONDecoder(bytes.NewReader(content), 4096)
+
+	for {
+		obj := &unstructured.Unstructured{}
+		err := decoder.Decode(obj)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, fmt.Errorf("parse YAML in %s: %w", source, err)
+		}
+		if obj.GetKind() == "" {
+			continue
+		}
+		manifests = append(manifests, obj)
+	}
+
+	return manifests, nil
+}

@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	_ "embed"
 
@@ -42,6 +41,11 @@ type ensureCRDFunc func(context.Context, *rest.Config) error
 type workflowRunner interface {
 	Run(context.Context, *types.Workflow, func(*types.Step) bool, workflows.StepNotifier) []workflows.StepResult[any]
 }
+
+type sharedWorkflowRunner struct {
+	workflowRunner
+}
+
 type getterFactory func(*rest.Config) (*getter.Getter, error)
 type applierFactory func(*rest.Config) (*applier.Applier, error)
 type deletorFactory func(*rest.Config) (*deletor.Deletor, error)
@@ -193,7 +197,7 @@ func (c *migrateFullSpecsCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ..
 	// Step 1: Fetch legacy resource
 	var legacyObj *unstructured.Unstructured
 	logger.Info("Step 1/6: Fetching legacy KrateoPlatformOps CR...")
-	legacyObj, err = c.fetchLegacyResource(ctx, dyn)
+	legacyObj, err = fetchLegacyResource(ctx, dyn, c.namespace, c.name)
 	if err != nil {
 		logger.Error("Failed to read KrateoPlatformOps resource: %v", err)
 		return subcommands.ExitFailure
@@ -208,7 +212,7 @@ func (c *migrateFullSpecsCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ..
 		return subcommands.ExitFailure
 	}
 
-	if err := c.applyDefaultComponents(doc, c.installType); err != nil {
+	if err := applyDefaultComponents(doc, c.installType); err != nil {
 		logger.Error("Failed to load components definition: %v", err)
 		return subcommands.ExitFailure
 	}
@@ -219,7 +223,7 @@ func (c *migrateFullSpecsCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ..
 		return subcommands.ExitFailure
 	}
 
-	if err := c.writeOutput(data); err != nil {
+	if err := writeOutputFile(c.outputPath, c.force, c.writeFile, data); err != nil {
 		logger.Error("Failed to write %s: %v", c.outputPath, err)
 		return subcommands.ExitFailure
 	}
@@ -255,103 +259,54 @@ func (c *migrateFullSpecsCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ..
 	if len(result.Steps) == 0 {
 		logger.Info("ℹ No steps configured")
 	} else {
-		// Build installation snapshot
-		snapshot, err := state.BuildSnapshot(result.Config, result.Steps)
-		if err != nil {
-			logger.Error("Failed to build installation snapshot: %v", err)
-			return subcommands.ExitFailure
-		}
-
-		// Initialize workflow executor
-		g, err := c.getterFactory(rc)
-		if err != nil {
-			logger.Error("Failed to initialize getter: %v", err)
-			return subcommands.ExitFailure
-		}
-		a, err := c.applierFactory(rc)
-		if err != nil {
-			logger.Error("Failed to initialize applier: %v", err)
-			return subcommands.ExitFailure
-		}
-		d, err := c.deletorFactory(rc)
-		if err != nil {
-			logger.Error("Failed to initialize deletor: %v", err)
-			return subcommands.ExitFailure
-		}
-
-		wf, err := c.workflowFactory(workflows.Opts{
-			Getter:    g,
-			Applier:   a,
-			Deletor:   d,
-			Logger:    logger.Debug,
-			Cfg:       rc,
-			Namespace: c.namespace,
-		})
-		if err != nil {
-			logger.Error("Failed to initialize workflow: %v", err)
-			return subcommands.ExitFailure
-		}
-
 		logger.Info("⚡ Executing %d steps...", len(result.Steps))
 
-		// Execute workflow steps
-		results := wf.Run(ctx, &types.Workflow{Steps: result.Steps}, func(s *types.Step) bool {
-			return s.Skip
-		}, func(idx int, step *types.Step, skipped bool) {
-			status := "executing"
-			if skipped {
-				status = "skipped"
-			}
-			logger.Debug("Processing step %d/%d: %s (%s)", idx+1, len(result.Steps), step.ID, status)
-		})
-
-		// Evaluate workflow results
-		if err := c.errEvaluator(results); err != nil {
-			logger.Error("Workflow execution failed: %v", err)
-			// Print detailed results
-			for i, step := range result.Steps {
-				res := results[i]
-				switch {
-				case res.ID() == "":
-					logger.Info("[PEND] %s (%s) not executed", step.ID, step.Type)
-				case step.Skip:
-					logger.Info("[SKIP] %s (%s)", step.ID, step.Type)
-				case res.Err() != nil:
-					logger.Error("%s (%s) failed: %v", step.ID, step.Type, res.Err())
-				default:
-					logger.Info("✓ %s (%s)", step.ID, step.Type)
+		execResult, err := shared.ExecuteWorkflow(ctx, rc, shared.ExecuteWorkflowOptions{
+			Namespace: c.namespace,
+			StateName: state.DefaultInstallationName,
+			Logger:    logger,
+			Result:    result,
+			ProgressReporter: func(idx int, step *types.Step, skipped bool) {
+				status := "executing"
+				if skipped {
+					status = "skipped"
 				}
+				logger.Debug("Processing step %d/%d: %s (%s)", idx+1, len(result.Steps), step.ID, status)
+			},
+			SaveState: false,
+		}, shared.WorkflowDeps{
+			GetterFactory:  shared.GetterFactory(c.getterFactory),
+			ApplierFactory: shared.ApplierFactory(c.applierFactory),
+			DeletorFactory: shared.DeletorFactory(c.deletorFactory),
+			WorkflowFactory: func(opts workflows.Opts) (shared.WorkflowRunner, error) {
+				wf, err := c.workflowFactory(opts)
+				if err != nil {
+					return nil, err
+				}
+				return sharedWorkflowRunner{workflowRunner: wf}, nil
+			},
+			ErrEvaluator: shared.ErrEvaluator(c.errEvaluator),
+			StateFactory: shared.StateStoreFactory(c.stateFactory),
+		})
+		if err != nil {
+			logger.Error("Workflow execution failed: %v", err)
+			if execResult != nil {
+				shared.LogWorkflowResults(logger, result.Steps, execResult.Results)
 			}
 			return subcommands.ExitFailure
 		}
 
-		// Save installation state
-		installationStore, err := c.stateFactory(rc, c.namespace)
+		store, err := c.stateFactory(rc, c.namespace)
 		if err != nil {
 			logger.Error("Failed to initialize installation state store: %v", err)
 			return subcommands.ExitFailure
 		}
-
-		if err := installationStore.Save(ctx, state.DefaultInstallationName, snapshot); err != nil {
+		if err := store.Save(ctx, state.DefaultInstallationName, execResult.Snapshot); err != nil {
 			logger.Warn("⚠ Unable to persist installation snapshot: %v", err)
 		} else {
 			logger.Info("✓ Saved installation snapshot: %s/%s", c.namespace, state.DefaultInstallationName)
 		}
-
-		// Print step results
-		for i, step := range result.Steps {
-			res := results[i]
-			switch {
-			case res.ID() == "":
-				logger.Info("[PEND] %s (%s)", step.ID, step.Type)
-			case step.Skip:
-				logger.Info("[SKIP] %s (%s)", step.ID, step.Type)
-			case res.Err() != nil:
-				logger.Error("%s (%s) failed: %v", step.ID, step.Type, res.Err())
-			default:
-				logger.Info("✓ %s (%s)", step.ID, step.Type)
-			}
-		}
+		shared.LogWorkflowResults(logger, result.Steps, execResult.Results)
 		logger.Info("✓ Successfully applied %d steps", len(result.Steps))
 	}
 
@@ -386,30 +341,6 @@ func (c *migrateFullSpecsCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ..
 	logger.Info("========================================================================")
 
 	return subcommands.ExitSuccess
-}
-
-func (c *migrateFullSpecsCmd) fetchLegacyResource(ctx context.Context, dyn dynamic.Interface) (*unstructured.Unstructured, error) {
-	var lastErr error
-	for _, gvr := range legacyGVRs {
-		obj, err := dyn.Resource(gvr).Namespace(c.namespace).Get(ctx, c.name, metav1.GetOptions{})
-		switch {
-		case err == nil:
-			return obj, nil
-		case apierrors.IsNotFound(err):
-			lastErr = err
-			continue
-		case meta.IsNoMatchError(err):
-			lastErr = err
-			continue
-		default:
-			return nil, err
-		}
-	}
-
-	if lastErr == nil {
-		lastErr = fmt.Errorf("KrateoPlatformOps %s/%s not found", c.namespace, c.name)
-	}
-	return nil, lastErr
 }
 
 func (c *migrateFullSpecsCmd) scaleInstallerController(ctx context.Context, cfg *rest.Config, replicas int32) error {
@@ -496,54 +427,5 @@ func (c *migrateFullSpecsCmd) uninstallOldInstaller(ctx context.Context, cfg *re
 		return fmt.Errorf("failed to uninstall installer-crd chart: %w", err)
 	}
 
-	return nil
-}
-
-func (c *migrateFullSpecsCmd) writeOutput(data []byte) error {
-	if !c.force {
-		if _, err := os.Stat(c.outputPath); err == nil {
-			return fmt.Errorf("output file %s already exists (use --force to overwrite)", c.outputPath)
-		} else if !os.IsNotExist(err) {
-			return err
-		}
-	}
-
-	dir := filepath.Dir(c.outputPath)
-	if dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
-		}
-	}
-
-	if len(data) > 0 && data[len(data)-1] != '\n' {
-		data = append(data, '\n')
-	}
-
-	return c.writeFile(c.outputPath, data, 0o644)
-}
-
-func (c *migrateFullSpecsCmd) applyDefaultComponents(doc *config.Document, installType string) error {
-	if doc == nil {
-		return fmt.Errorf("document is nil")
-	}
-
-	var componentData []byte
-	switch installType {
-	case "loadbalancer":
-		componentData = componentsDefinitionLoadbalancerYAML
-	case "ingress":
-		componentData = componentsDefinitionIngressYAML
-	case "nodeport", "":
-		componentData = componentsDefinitionYAML
-	default:
-		return fmt.Errorf("unknown installation type: %s (expected: nodeport, loadbalancer, or ingress)", installType)
-	}
-
-	components, err := loadComponentsDefinition(componentData)
-	if err != nil {
-		return err
-	}
-
-	doc.ComponentsDefinition = components
 	return nil
 }
