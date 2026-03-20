@@ -9,11 +9,9 @@ import (
 	"os"
 
 	"github.com/krateoplatformops/krateoctl/internal/cmd/install/shared"
-	"github.com/krateoplatformops/krateoctl/internal/config"
 	"github.com/krateoplatformops/krateoctl/internal/diff"
 	"github.com/krateoplatformops/krateoctl/internal/install/state"
 	"github.com/krateoplatformops/krateoctl/internal/subcommands"
-	"github.com/krateoplatformops/krateoctl/internal/ui"
 	"github.com/krateoplatformops/krateoctl/internal/util/kube"
 	"gopkg.in/yaml.v3"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -119,40 +117,28 @@ func (c *planCmd) SetFlags(f *flag.FlagSet) {
 }
 
 func (c *planCmd) ensureDeps() {
-	if c.namespace == "" {
-		c.namespace = shared.DefaultNamespace
-	}
 	if c.restConfigFn == nil {
 		c.restConfigFn = kube.RestConfig
 	}
 	if c.stateFactory == nil {
-		c.stateFactory = func(cfg *rest.Config, namespace string) (state.Store, error) {
-			return state.NewStore(cfg, namespace)
-		}
+		c.stateFactory = shared.DefaultStateStoreFactory
 	}
-	if c.stateName == "" {
-		c.stateName = state.DefaultInstallationName
-	}
+	c.namespace = shared.EnsureNamespace(c.namespace)
+	c.stateName = shared.EnsureStateName(c.stateName)
 }
 
 func (c *planCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
 	c.ensureDeps()
 
 	// Enable debug mode from flag or environment variable
-	debugMode := c.debug || os.Getenv(shared.KRATEOCTL_DEBUG_ENV) != ""
-	logLevel := ui.LevelInfo
-	if debugMode {
-		logLevel = ui.LevelDebug
-	}
-	l := ui.NewLogger(os.Stderr, logLevel)
+	l := shared.NewLogger(os.Stderr, c.debug || os.Getenv(shared.KRATEOCTL_DEBUG_ENV) != "")
 
-	result, err := shared.LoadConfigAndSteps(config.LoadOptions{
-		ConfigPath:        c.configFile,
-		UserOverridesPath: shared.DefaultOverridesPath,
-		Profile:           c.profile,
-		Version:           c.version,
-		Repository:        c.repository,
-	}, l.Info, c.skipValidation)
+	result, err := shared.LoadConfigAndSteps(shared.NewLoadOptions(shared.LoadOptionsInput{
+		ConfigFile: c.configFile,
+		Profile:    c.profile,
+		Version:    c.version,
+		Repository: c.repository,
+	}), l.Info, c.skipValidation)
 	if err != nil {
 		l.Error("Failed to load configuration: %v", err)
 		return subcommands.ExitFailure

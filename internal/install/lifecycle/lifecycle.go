@@ -21,6 +21,22 @@ import (
 
 type GetterFactory func(*rest.Config) (*getter.Getter, error)
 
+type ApplyOptions struct {
+	Phase         string
+	Version       string
+	Repository    string
+	ConfigFile    string
+	RestConfig    *rest.Config
+	JobNameSuffix string
+}
+
+type loadOptions struct {
+	phase      string
+	version    string
+	repository string
+	configFile string
+}
+
 type Manager struct {
 	namespace     string
 	getterFactory GetterFactory
@@ -33,21 +49,26 @@ func NewManager(namespace string, getterFactory GetterFactory) *Manager {
 	}
 }
 
-func (m *Manager) Apply(ctx context.Context, applierClient *applier.Applier, logger *ui.Logger, phase, version, repository, configFile string, rc *rest.Config, jobNameSuffix string) error {
-	manifests, err := m.loadManifests(ctx, logger, phase, version, repository, configFile)
+func (m *Manager) Apply(ctx context.Context, applierClient *applier.Applier, logger *ui.Logger, opts ApplyOptions) error {
+	manifests, err := m.loadManifests(ctx, logger, loadOptions{
+		phase:      opts.Phase,
+		version:    opts.Version,
+		repository: opts.Repository,
+		configFile: opts.ConfigFile,
+	})
 	if err != nil {
 		return err
 	}
 	if len(manifests) == 0 {
-		logger.Info("ℹ No %s manifests found", phase)
+		logger.Info("ℹ No %s manifests found", opts.Phase)
 		return nil
 	}
 
-	logger.Info("⚡ Applying %d %s manifests...", len(manifests), phase)
+	logger.Info("⚡ Applying %d %s manifests...", len(manifests), opts.Phase)
 
 	var jobsToWait []*unstructured.Unstructured
 	for _, manifest := range manifests {
-		substituteTemplateVariables(manifest.UnstructuredContent(), m.namespace, jobNameSuffix)
+		substituteTemplateVariables(manifest.UnstructuredContent(), m.namespace, opts.JobNameSuffix)
 
 		if manifest.GetNamespace() == "" && !isClusterScoped(manifest.GetKind()) {
 			manifest.SetNamespace(m.namespace)
@@ -73,36 +94,36 @@ func (m *Manager) Apply(ctx context.Context, applierClient *applier.Applier, log
 		return nil
 	}
 
-	return m.waitForJobs(ctx, logger, jobsToWait, rc)
+	return m.waitForJobs(ctx, logger, jobsToWait, opts.RestConfig)
 }
 
-func (m *Manager) loadManifests(ctx context.Context, logger *ui.Logger, phase, version, repository, configFile string) ([]*unstructured.Unstructured, error) {
-	if version != "" {
-		baseRepo := repository
+func (m *Manager) loadManifests(ctx context.Context, logger *ui.Logger, opts loadOptions) ([]*unstructured.Unstructured, error) {
+	if opts.version != "" {
+		baseRepo := opts.repository
 		if baseRepo == "" {
 			baseRepo = remote.DefaultRepository
 		}
-		filename := fmt.Sprintf("%s.yaml", phase)
-		logger.Info("\n📍 Checking %s manifests from remote: %s/%s/%s", phase, baseRepo, version, filename)
+		filename := fmt.Sprintf("%s.yaml", opts.phase)
+		logger.Info("\n📍 Checking %s manifests from remote: %s/%s/%s", opts.phase, baseRepo, opts.version, filename)
 
-		manifests, err := loadRemoteManifests(ctx, baseRepo, version, phase)
+		manifests, err := loadRemoteManifests(ctx, baseRepo, opts.version, opts.phase)
 		if err != nil || len(manifests) == 0 {
-			logger.Info("ℹ No %s manifests found (expected)", phase)
+			logger.Info("ℹ No %s manifests found (expected)", opts.phase)
 			return nil, nil
 		}
 		return manifests, nil
 	}
 
 	configDir := "."
-	if configFile != "" {
-		configDir = filepath.Dir(configFile)
+	if opts.configFile != "" {
+		configDir = filepath.Dir(opts.configFile)
 	}
-	manifestsPath := filepath.Join(configDir, fmt.Sprintf("%s.yaml", phase))
-	logger.Info("\n📍 Checking %s manifests locally: %s", phase, manifestsPath)
+	manifestsPath := filepath.Join(configDir, fmt.Sprintf("%s.yaml", opts.phase))
+	logger.Info("\n📍 Checking %s manifests locally: %s", opts.phase, manifestsPath)
 
 	manifests, err := loadLocalManifestsFile(manifestsPath)
 	if err != nil || len(manifests) == 0 {
-		logger.Info("ℹ No %s manifests found (expected)", phase)
+		logger.Info("ℹ No %s manifests found (expected)", opts.phase)
 		return nil, nil
 	}
 

@@ -153,7 +153,12 @@ func (c *migrateCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ...any) sub
 		return subcommands.ExitFailure
 	}
 
-	if err := writeOutputFile(c.outputPath, c.force, c.writeFile, data); err != nil {
+	if err := writeOutputFile(writeOutputOptions{
+		outputPath: c.outputPath,
+		force:      c.force,
+		writeFile:  c.writeFile,
+		data:       data,
+	}); err != nil {
 		logger.Error("Failed to write %s: %v", c.outputPath, err)
 		return subcommands.ExitFailure
 	}

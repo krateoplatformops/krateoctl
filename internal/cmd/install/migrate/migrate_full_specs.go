@@ -10,14 +10,12 @@ import (
 	_ "embed"
 
 	"github.com/krateoplatformops/krateoctl/internal/cmd/install/shared"
-	"github.com/krateoplatformops/krateoctl/internal/config"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/applier"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/deletor"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/getter"
 	"github.com/krateoplatformops/krateoctl/internal/install/migrate/legacy"
 	"github.com/krateoplatformops/krateoctl/internal/install/state"
 	"github.com/krateoplatformops/krateoctl/internal/subcommands"
-	"github.com/krateoplatformops/krateoctl/internal/ui"
 	"github.com/krateoplatformops/krateoctl/internal/util/kube"
 	"github.com/krateoplatformops/krateoctl/internal/workflows"
 	"github.com/krateoplatformops/krateoctl/internal/workflows/types"
@@ -118,14 +116,8 @@ func (c *migrateFullSpecsCmd) SetFlags(f *flag.FlagSet) {
 }
 
 func (c *migrateFullSpecsCmd) ensureDeps() {
-	if c.namespace == "" {
-		c.namespace = shared.DefaultNamespace
-	}
 	if c.outputPath == "" {
 		c.outputPath = shared.DefaultConfigPath
-	}
-	if c.installerNamespace == "" {
-		c.installerNamespace = c.namespace
 	}
 	if c.restConfigFn == nil {
 		c.restConfigFn = kube.RestConfig
@@ -144,9 +136,7 @@ func (c *migrateFullSpecsCmd) ensureDeps() {
 		}
 	}
 	if c.stateFactory == nil {
-		c.stateFactory = func(cfg *rest.Config, namespace string) (state.Store, error) {
-			return state.NewStore(cfg, namespace)
-		}
+		c.stateFactory = shared.DefaultStateStoreFactory
 	}
 	if c.ensureCRDFn == nil {
 		c.ensureCRDFn = state.EnsureCRD
@@ -170,17 +160,17 @@ func (c *migrateFullSpecsCmd) ensureDeps() {
 			return workflows.Err(results)
 		}
 	}
+	c.namespace = shared.EnsureNamespace(c.namespace)
+	if c.installerNamespace == "" {
+		c.installerNamespace = c.namespace
+	}
 }
 
 func (c *migrateFullSpecsCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	c.ensureDeps()
 
 	// Enable debug mode from flag or environment variable
-	logLevel := ui.LevelInfo
-	if c.debug || os.Getenv(shared.KRATEOCTL_DEBUG_ENV) != "" {
-		logLevel = ui.LevelDebug
-	}
-	logger := ui.NewLogger(os.Stderr, logLevel)
+	logger := shared.NewLogger(os.Stderr, c.debug || os.Getenv(shared.KRATEOCTL_DEBUG_ENV) != "")
 
 	rc, err := c.restConfigFn()
 	if err != nil {
@@ -223,7 +213,12 @@ func (c *migrateFullSpecsCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ..
 		return subcommands.ExitFailure
 	}
 
-	if err := writeOutputFile(c.outputPath, c.force, c.writeFile, data); err != nil {
+	if err := writeOutputFile(writeOutputOptions{
+		outputPath: c.outputPath,
+		force:      c.force,
+		writeFile:  c.writeFile,
+		data:       data,
+	}); err != nil {
 		logger.Error("Failed to write %s: %v", c.outputPath, err)
 		return subcommands.ExitFailure
 	}
@@ -247,10 +242,9 @@ func (c *migrateFullSpecsCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ..
 	}
 
 	// Load and validate config
-	result, err := shared.LoadConfigAndSteps(config.LoadOptions{
-		ConfigPath:        c.outputPath,
-		UserOverridesPath: shared.DefaultOverridesPath,
-	}, logger.Debug, false)
+	result, err := shared.LoadConfigAndSteps(shared.NewLoadOptions(shared.LoadOptionsInput{
+		ConfigFile: c.outputPath,
+	}), logger.Debug, false)
 	if err != nil {
 		logger.Error("Failed to load generated configuration: %v", err)
 		return subcommands.ExitFailure

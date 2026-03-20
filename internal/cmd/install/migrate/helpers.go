@@ -39,27 +39,35 @@ func fetchLegacyResource(ctx context.Context, dyn dynamic.Interface, namespace, 
 	return nil, lastErr
 }
 
-func writeOutputFile(outputPath string, force bool, writeFile fileWriter, data []byte) error {
-	if !force {
-		if _, err := os.Stat(outputPath); err == nil {
-			return fmt.Errorf("output file %s already exists (use --force to overwrite)", outputPath)
+type writeOutputOptions struct {
+	outputPath string
+	force      bool
+	writeFile  fileWriter
+	data       []byte
+}
+
+func writeOutputFile(opts writeOutputOptions) error {
+	if !opts.force {
+		if _, err := os.Stat(opts.outputPath); err == nil {
+			return fmt.Errorf("output file %s already exists (use --force to overwrite)", opts.outputPath)
 		} else if !os.IsNotExist(err) {
 			return err
 		}
 	}
 
-	dir := filepath.Dir(outputPath)
+	dir := filepath.Dir(opts.outputPath)
 	if dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
 		}
 	}
 
+	data := opts.data
 	if len(data) > 0 && data[len(data)-1] != '\n' {
 		data = append(data, '\n')
 	}
 
-	return writeFile(outputPath, data, 0o644)
+	return opts.writeFile(opts.outputPath, data, 0o644)
 }
 
 func applyDefaultComponents(doc *config.Document, installType string) error {

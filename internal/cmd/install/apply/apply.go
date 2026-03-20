@@ -10,7 +10,6 @@ import (
 
 	"github.com/krateoplatformops/krateoctl/internal/cmd/install/secrets"
 	"github.com/krateoplatformops/krateoctl/internal/cmd/install/shared"
-	"github.com/krateoplatformops/krateoctl/internal/config"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/applier"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/deletor"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/getter"
@@ -90,16 +89,13 @@ func (c *applyCmd) ensureDeps() {
 		}
 	}
 	if c.stateFactory == nil {
-		c.stateFactory = func(cfg *rest.Config, namespace string) (state.Store, error) {
-			return state.NewStore(cfg, namespace)
-		}
+		c.stateFactory = shared.DefaultStateStoreFactory
 	}
 	if c.ensureCRDFn == nil {
 		c.ensureCRDFn = state.EnsureCRD
 	}
-	if c.stateName == "" {
-		c.stateName = state.DefaultInstallationName
-	}
+	c.namespace = shared.EnsureNamespace(c.namespace)
+	c.stateName = shared.EnsureStateName(c.stateName)
 }
 
 func (c *applyCmd) Name() string     { return "apply" }
@@ -154,14 +150,8 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 
 	// 1. Initialize UI and Logging
 	// Enable debug mode from flag or environment variable
-	debugMode := c.debug || os.Getenv(shared.KRATEOCTL_DEBUG_ENV) != ""
-	logLevel := ui.LevelInfo
-	if debugMode {
-		logLevel = ui.LevelDebug
-	}
-
 	spin := ui.NewSpinner(os.Stdout)
-	l := ui.NewLogger(spin, logLevel)
+	l := shared.NewLogger(spin, c.debug || os.Getenv(shared.KRATEOCTL_DEBUG_ENV) != "")
 	defer spin.Stop("")
 	lifecycleManager := lifecycle.NewManager(c.namespace, func(cfg *rest.Config) (*getter.Getter, error) {
 		return c.getterFactory(cfg)
@@ -171,13 +161,12 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 	jobNameSuffix := time.Now().Format("20060102-150405")
 
 	// 2. Load Configuration
-	result, err := shared.LoadConfigAndSteps(config.LoadOptions{
-		ConfigPath:        c.configFile,
-		UserOverridesPath: shared.DefaultOverridesPath,
-		Profile:           c.profile,
-		Version:           c.version,
-		Repository:        c.repository,
-	}, l.Info, c.skipValidation)
+	result, err := shared.LoadConfigAndSteps(shared.NewLoadOptions(shared.LoadOptionsInput{
+		ConfigFile: c.configFile,
+		Profile:    c.profile,
+		Version:    c.version,
+		Repository: c.repository,
+	}), l.Info, c.skipValidation)
 	if err != nil {
 		l.Error("Failed to load configuration: %v", err)
 		return subcommands.ExitFailure
@@ -219,7 +208,14 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 		return subcommands.ExitFailure
 	}
 
-	if err := lifecycleManager.Apply(ctx, a, l, "pre-upgrade", c.version, c.repository, c.configFile, rc, jobNameSuffix); err != nil {
+	if err := lifecycleManager.Apply(ctx, a, l, lifecycle.ApplyOptions{
+		Phase:         "pre-upgrade",
+		Version:       c.version,
+		Repository:    c.repository,
+		ConfigFile:    c.configFile,
+		RestConfig:    rc,
+		JobNameSuffix: jobNameSuffix,
+	}); err != nil {
 		l.Error("Failed to apply pre-upgrade manifests: %v", err)
 		return subcommands.ExitFailure
 	}
@@ -268,7 +264,14 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 	}
 
 	// 6.5. Apply Post-Upgrade Manifests (if they exist)
-	if err := lifecycleManager.Apply(ctx, a, l, "post-upgrade", c.version, c.repository, c.configFile, rc, jobNameSuffix); err != nil {
+	if err := lifecycleManager.Apply(ctx, a, l, lifecycle.ApplyOptions{
+		Phase:         "post-upgrade",
+		Version:       c.version,
+		Repository:    c.repository,
+		ConfigFile:    c.configFile,
+		RestConfig:    rc,
+		JobNameSuffix: jobNameSuffix,
+	}); err != nil {
 		l.Error("Failed to apply post-upgrade manifests: %v", err)
 		return subcommands.ExitFailure
 	}

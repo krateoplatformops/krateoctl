@@ -16,6 +16,14 @@ type JobWaiter struct {
 	timeout time.Duration
 }
 
+type jobStatus int
+
+const (
+	jobStatusRunning jobStatus = iota
+	jobStatusSucceeded
+	jobStatusFailed
+)
+
 // NewJobWaiter creates a new JobWaiter with a default 5-minute timeout.
 func NewJobWaiter(g *getter.Getter) *JobWaiter {
 	return &JobWaiter{
@@ -44,17 +52,17 @@ func (jw *JobWaiter) Wait(ctx context.Context, namespace, jobName string) error 
 		case <-timeoutCtx.Done():
 			return fmt.Errorf("timeout waiting for Job %s/%s to complete after %v", namespace, jobName, jw.timeout)
 		case <-ticker.C:
-			succeeded, failed, err := jw.checkStatus(timeoutCtx, namespace, jobName)
+			status, err := jw.checkStatus(timeoutCtx, namespace, jobName)
 			if err != nil {
 				// Log but continue polling
 				continue
 			}
 
-			if failed {
+			if status == jobStatusFailed {
 				return fmt.Errorf("Job %s/%s failed", namespace, jobName)
 			}
 
-			if succeeded {
+			if status == jobStatusSucceeded {
 				return nil
 			}
 		}
@@ -62,8 +70,7 @@ func (jw *JobWaiter) Wait(ctx context.Context, namespace, jobName string) error 
 }
 
 // checkStatus fetches the Job and checks if it has succeeded or failed.
-// Returns (succeeded, failed, error) tuple.
-func (jw *JobWaiter) checkStatus(ctx context.Context, namespace, jobName string) (bool, bool, error) {
+func (jw *JobWaiter) checkStatus(ctx context.Context, namespace, jobName string) (jobStatus, error) {
 	opts := getter.GetOptions{
 		GVK:       schema.GroupVersionKind{Group: "batch", Version: "v1", Kind: "Job"},
 		Namespace: namespace,
@@ -72,25 +79,24 @@ func (jw *JobWaiter) checkStatus(ctx context.Context, namespace, jobName string)
 
 	job, err := jw.getter.Get(ctx, opts)
 	if err != nil {
-		return false, false, err
+		return jobStatusRunning, err
 	}
 
 	return parseJobConditions(job)
 }
 
 // parseJobConditions examines a Job's status conditions and returns its state.
-// Returns (succeeded, failed, error) tuple.
-func parseJobConditions(job *unstructured.Unstructured) (bool, bool, error) {
+func parseJobConditions(job *unstructured.Unstructured) (jobStatus, error) {
 	// Extract status from Job object
 	status, ok := job.Object["status"].(map[string]interface{})
 	if !ok {
-		return false, false, nil // No status yet
+		return jobStatusRunning, nil // No status yet
 	}
 
 	// Check conditions array
 	conditions, ok := status["conditions"].([]interface{})
 	if !ok || len(conditions) == 0 {
-		return false, false, nil // No conditions yet, still running
+		return jobStatusRunning, nil // No conditions yet, still running
 	}
 
 	// Evaluate conditions
@@ -109,15 +115,15 @@ func parseJobConditions(job *unstructured.Unstructured) (bool, bool, error) {
 
 		// Job succeeded
 		if condType == "Complete" && condStatus == "True" {
-			return true, false, nil
+			return jobStatusSucceeded, nil
 		}
 
 		// Job failed
 		if condType == "Failed" && condStatus == "True" {
-			return false, true, nil
+			return jobStatusFailed, nil
 		}
 	}
 
 	// Still running
-	return false, false, nil
+	return jobStatusRunning, nil
 }
