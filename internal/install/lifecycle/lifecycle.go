@@ -132,22 +132,11 @@ func (m *Manager) loadManifests(ctx context.Context, logger *ui.Logger, opts loa
 }
 
 func loadLocalManifests(configDir, phase, installationType string) ([]*unstructured.Unstructured, error) {
-	// Try type-specific file first (e.g., pre-upgrade.nodeport.yaml)
-	if installationType != "" && installationType != "nodeport" {
-		typeSpecificPath := filepath.Join(configDir, fmt.Sprintf("%s.%s.yaml", phase, installationType))
+	for _, candidate := range installationTypeCandidates(installationType) {
+		typeSpecificPath := filepath.Join(configDir, fmt.Sprintf("%s.%s.yaml", phase, candidate))
 		if content, err := os.ReadFile(typeSpecificPath); err == nil {
 			return parseManifests(content, typeSpecificPath)
 		}
-		// Fall through to generic file if type-specific doesn't exist
-	}
-
-	// For nodeport, also try .kind.yaml variant
-	if installationType == "nodeport" {
-		kindPath := filepath.Join(configDir, fmt.Sprintf("%s.kind.yaml", phase))
-		if content, err := os.ReadFile(kindPath); err == nil {
-			return parseManifests(content, kindPath)
-		}
-		// Fall through to generic file
 	}
 
 	// Fallback to generic manifest file
@@ -166,9 +155,8 @@ func loadLocalManifests(configDir, phase, installationType string) ([]*unstructu
 func loadRemoteManifests(ctx context.Context, repository, version, phase, installationType string) ([]*unstructured.Unstructured, error) {
 	fetcher := remote.NewFetcher()
 
-	// Try type-specific file first (e.g., pre-upgrade.nodeport.yaml)
-	if installationType != "" && installationType != "nodeport" {
-		filename := fmt.Sprintf("%s.%s.yaml", phase, installationType)
+	for _, candidate := range installationTypeCandidates(installationType) {
+		filename := fmt.Sprintf("%s.%s.yaml", phase, candidate)
 		content, err := fetcher.FetchFile(remote.FetchOptions{
 			Repository: repository,
 			Version:    version,
@@ -178,22 +166,6 @@ func loadRemoteManifests(ctx context.Context, repository, version, phase, instal
 		if err == nil && len(content) > 0 {
 			return parseManifests(content, fmt.Sprintf("%s/%s", version, filename))
 		}
-		// Fall through to generic file if type-specific doesn't exist or empty
-	}
-
-	// For nodeport, also try .kind.yaml variant
-	if installationType == "nodeport" {
-		filename := fmt.Sprintf("%s.kind.yaml", phase)
-		content, err := fetcher.FetchFile(remote.FetchOptions{
-			Repository: repository,
-			Version:    version,
-			Filename:   filename,
-			Timeout:    remote.DefaultTimeout,
-		})
-		if err == nil && len(content) > 0 {
-			return parseManifests(content, fmt.Sprintf("%s/%s", version, filename))
-		}
-		// Fall through to generic file
 	}
 
 	// Fallback to generic manifest file
@@ -210,6 +182,30 @@ func loadRemoteManifests(ctx context.Context, repository, version, phase, instal
 
 	_ = ctx
 	return parseManifests(content, fmt.Sprintf("%s/%s", version, filename))
+}
+
+func installationTypeCandidates(installType string) []string {
+	raw := strings.ToLower(strings.TrimSpace(installType))
+	if raw == "" {
+		return nil
+	}
+
+	hasYAMLSuffix := strings.HasSuffix(raw, ".yaml")
+	base := strings.TrimSuffix(raw, ".yaml")
+
+	switch base {
+	case "kind":
+		return []string{"kind", "nodeport"}
+	case "nodeport":
+		if hasYAMLSuffix {
+			return []string{"nodeport", "kind"}
+		}
+		return []string{"kind", "nodeport"}
+	case "loadbalancer", "ingress":
+		return []string{base}
+	default:
+		return []string{base}
+	}
 }
 
 func (m *Manager) waitForJobs(ctx context.Context, logger *ui.Logger, jobs []*unstructured.Unstructured, rc *rest.Config) error {

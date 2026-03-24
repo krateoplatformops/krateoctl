@@ -123,6 +123,61 @@ func TestLoader(t *testing.T) {
 	}
 }
 
+func TestLoaderLoadConfigWithTypeVariants(t *testing.T) {
+	tmpDir := t.TempDir()
+	basePath := filepath.Join(tmpDir, "krateo.yaml")
+	kindPath := filepath.Join(tmpDir, "krateo.kind.yaml")
+	nodeportPath := filepath.Join(tmpDir, "krateo.nodeport.yaml")
+
+	writeTestFile(t, basePath, "modules:\n  base:\n    enabled: true\n")
+	writeTestFile(t, kindPath, "modules:\n  kind:\n    enabled: true\n")
+	writeTestFile(t, nodeportPath, "modules:\n  nodeport:\n    enabled: true\n")
+
+	tests := []struct {
+		name        string
+		installType string
+		wantModule  string
+	}{
+		{
+			name:        "kind yaml selects kind file",
+			installType: "kind.yaml",
+			wantModule:  "kind",
+		},
+		{
+			name:        "nodeport yaml selects nodeport file",
+			installType: "nodeport.yaml",
+			wantModule:  "nodeport",
+		},
+		{
+			name:        "nodeport alias still prefers kind file",
+			installType: "nodeport",
+			wantModule:  "kind",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			loader := NewLoader(LoadOptions{
+				ConfigPath:       basePath,
+				InstallationType: tc.installType,
+			})
+
+			data, err := loader.Load()
+			if err != nil {
+				t.Fatalf("Load() unexpected error: %v", err)
+			}
+
+			modules, ok := data["modules"].(map[string]any)
+			if !ok {
+				t.Fatalf("Load() modules type = %T, want map[string]any", data["modules"])
+			}
+			if _, ok := modules[tc.wantModule]; !ok {
+				t.Fatalf("Load() modules = %v, want key %q", modules, tc.wantModule)
+			}
+		})
+	}
+}
+
 func writeTestFile(t *testing.T, path string, data string) {
 	t.Helper()
 
