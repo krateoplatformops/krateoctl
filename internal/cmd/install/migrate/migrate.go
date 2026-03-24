@@ -6,21 +6,15 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	_ "embed"
 
 	"github.com/krateoplatformops/krateoctl/internal/cmd/install/shared"
-	"github.com/krateoplatformops/krateoctl/internal/config"
 	"github.com/krateoplatformops/krateoctl/internal/install/migrate/legacy"
 	"github.com/krateoplatformops/krateoctl/internal/subcommands"
 	"github.com/krateoplatformops/krateoctl/internal/ui"
 	"github.com/krateoplatformops/krateoctl/internal/util/kube"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	meta "k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
@@ -34,6 +28,12 @@ type fileWriter func(string, []byte, os.FileMode) error
 //go:embed assets/componentsDefinition.yaml
 var componentsDefinitionYAML []byte
 
+//go:embed assets/componentsDefinition-loadbalancer.yaml
+var componentsDefinitionLoadbalancerYAML []byte
+
+//go:embed assets/componentsDefinition-ingress.yaml
+var componentsDefinitionIngressYAML []byte
+
 var legacyGVRs = []schema.GroupVersionResource{
 	{Group: "krateo.io", Version: "v1alpha1", Resource: "krateoplatformops"},
 	{Group: "krateo.io", Version: "v1alpha1", Resource: "krateoplatformopses"},
@@ -45,11 +45,12 @@ func Command() subcommands.Command {
 }
 
 type migrateCmd struct {
-	name       string
-	namespace  string
-	outputPath string
-	force      bool
-	debug      bool
+	installType string
+	name        string
+	namespace   string
+	outputPath  string
+	force       bool
+	debug       bool
 
 	restConfigFn   restConfigProvider
 	dynamicFactory dynamicFactory
@@ -58,7 +59,7 @@ type migrateCmd struct {
 
 func (c *migrateCmd) Name() string { return "migrate" }
 func (c *migrateCmd) Synopsis() string {
-	return "convert a legacy KrateoPlatformOps resource into krateo.yaml"
+	return "generate krateo.yaml from a legacy KrateoPlatformOps resource (manual migration)"
 }
 
 func (c *migrateCmd) Usage() string {
@@ -67,16 +68,46 @@ func (c *migrateCmd) Usage() string {
 	buf.WriteString("\n\nUSAGE:\n\n")
 	buf.WriteString("  krateoctl install migrate [FLAGS]\n\n")
 	buf.WriteString("FLAGS:\n\n")
+	buf.WriteString("  --type string\n        installation type: nodeport, loadbalancer, or ingress (default \"nodeport\")\n")
 	fmt.Fprintf(buf, "  --namespace string\n        namespace that contains the KrateoPlatformOps resource (default \"%s\")\n", shared.DefaultNamespace)
 	buf.WriteString("  --name string\n        name of the KrateoPlatformOps resource (default \"krateo\")\n")
 	fmt.Fprintf(buf, "  --output string\n        path to write the generated krateo.yaml (default \"%s\")\n", shared.DefaultConfigPath)
 	buf.WriteString("  --force\n        overwrite the output file if it already exists\n")
-	buf.WriteString("  --debug\n        enable debug-level logging (can also use KRATEOCTL_DEBUG env var)\n")
+	buf.WriteString("  --debug\n        enable debug-level logging (can also use KRATEOCTL_DEBUG env var)\n\n")
+	buf.WriteString("PREREQUISITES:\n\n")
+	buf.WriteString("  Use this command only for Krateo 2.7.0 installations managed by the installer controller.\n\n")
+	buf.WriteString("WHAT THIS COMMAND DOES:\n\n")
+	buf.WriteString("  1. Reads the legacy KrateoPlatformOps resource from the cluster.\n")
+	buf.WriteString("  2. Converts its spec into a new krateo.yaml file.\n")
+	buf.WriteString("  3. Writes the file to disk and stops.\n\n")
+	buf.WriteString("KRATEOCTL STEPS:\n\n")
+	buf.WriteString("  1. Connects to the cluster using the current kubeconfig.\n")
+	buf.WriteString("  2. Reads the legacy KrateoPlatformOps custom resource.\n")
+	buf.WriteString("  3. Converts the legacy spec into the new configuration format.\n")
+	buf.WriteString("  4. Adds the default components definition for the selected installation type.\n")
+	buf.WriteString("  5. Writes the generated krateo.yaml to disk.\n\n")
+	buf.WriteString("WHEN TO USE IT:\n\n")
+	buf.WriteString("  Use this command when you want a simple, manual migration.\n")
+	buf.WriteString("  It does not apply the new configuration and it does not modify the running installer.\n")
+	buf.WriteString("  After generating krateo.yaml, you review it, then run install plan/apply yourself.\n\n")
+	buf.WriteString("WHEN NOT TO USE IT:\n\n")
+	buf.WriteString("  If you want the migration workflow to continue automatically, use\n")
+	buf.WriteString("  krateoctl install migrate-full instead.\n\n")
+	buf.WriteString("EXAMPLES:\n\n")
+	buf.WriteString("  # Generate krateo.yaml from the default legacy resource\n")
+	buf.WriteString("  krateoctl install migrate\n\n")
+	buf.WriteString("  # Generate a file for a specific installation type\n")
+	buf.WriteString("  krateoctl install migrate --type ingress --output ./krateo.yaml\n\n")
+	buf.WriteString("  # Generate the file, then review and apply it manually\n")
+	buf.WriteString("  krateoctl install migrate --type nodeport\n")
+	buf.WriteString("  krateoctl install plan --config ./krateo.yaml --type nodeport\n")
+	buf.WriteString("  krateoctl install apply --config ./krateo.yaml --type nodeport\n")
 
 	return buf.String()
 }
 
 func (c *migrateCmd) SetFlags(f *flag.FlagSet) {
+	f.StringVar(&c.installType, "type", "nodeport", "installation type: nodeport, loadbalancer, or ingress")
 	f.StringVar(&c.namespace, "namespace", shared.DefaultNamespace, "namespace that contains the KrateoPlatformOps resource")
 	f.StringVar(&c.name, "name", "krateo", "name of the KrateoPlatformOps resource")
 	f.StringVar(&c.outputPath, "output", shared.DefaultConfigPath, "path to write the generated krateo.yaml")
@@ -126,7 +157,8 @@ func (c *migrateCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ...any) sub
 		return subcommands.ExitFailure
 	}
 
-	legacyObj, err := c.fetchLegacyResource(ctx, dyn)
+	logger.Info("Fetching legacy KrateoPlatformOps from cluster: %s/%s", c.namespace, c.name)
+	legacyObj, err := fetchLegacyResource(ctx, dyn, c.namespace, c.name)
 	if err != nil {
 		logger.Error("Failed to read KrateoPlatformOps resource: %v", err)
 		return subcommands.ExitFailure
@@ -138,7 +170,7 @@ func (c *migrateCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ...any) sub
 		return subcommands.ExitFailure
 	}
 
-	if err := c.applyDefaultComponents(doc); err != nil {
+	if err := applyDefaultComponents(doc, c.installType); err != nil {
 		logger.Error("Failed to load components definition: %v", err)
 		return subcommands.ExitFailure
 	}
@@ -149,7 +181,12 @@ func (c *migrateCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ...any) sub
 		return subcommands.ExitFailure
 	}
 
-	if err := c.writeOutput(data); err != nil {
+	if err := writeOutputFile(writeOutputOptions{
+		outputPath: c.outputPath,
+		force:      c.force,
+		writeFile:  c.writeFile,
+		data:       data,
+	}); err != nil {
 		logger.Error("Failed to write %s: %v", c.outputPath, err)
 		return subcommands.ExitFailure
 	}
@@ -157,85 +194,4 @@ func (c *migrateCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ...any) sub
 	logger.Info("✓ Migrated legacy steps into %s", c.outputPath)
 	logger.Info("ℹ Review the generated file, then plan/apply with krateoctl. When ready, remove the old controller and KrateoPlatformOps CR manually.")
 	return subcommands.ExitSuccess
-}
-
-func (c *migrateCmd) fetchLegacyResource(ctx context.Context, dyn dynamic.Interface) (*unstructured.Unstructured, error) {
-	var lastErr error
-	for _, gvr := range legacyGVRs {
-		obj, err := dyn.Resource(gvr).Namespace(c.namespace).Get(ctx, c.name, metav1.GetOptions{})
-		switch {
-		case err == nil:
-			return obj, nil
-		case apierrors.IsNotFound(err):
-			lastErr = err
-			continue
-		case meta.IsNoMatchError(err):
-			lastErr = err
-			continue
-		default:
-			return nil, err
-		}
-	}
-
-	if lastErr == nil {
-		lastErr = fmt.Errorf("KrateoPlatformOps %s/%s not found", c.namespace, c.name)
-	}
-	return nil, lastErr
-}
-
-func (c *migrateCmd) writeOutput(data []byte) error {
-	if !c.force {
-		if _, err := os.Stat(c.outputPath); err == nil {
-			return fmt.Errorf("output file %s already exists (use -force to overwrite)", c.outputPath)
-		} else if !os.IsNotExist(err) {
-			return err
-		}
-	}
-
-	dir := filepath.Dir(c.outputPath)
-	if dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
-		}
-	}
-
-	if len(data) > 0 && data[len(data)-1] != '\n' {
-		data = append(data, '\n')
-	}
-
-	return c.writeFile(c.outputPath, data, 0o644)
-}
-
-func (c *migrateCmd) applyDefaultComponents(doc *config.Document) error {
-	if doc == nil {
-		return fmt.Errorf("document is nil")
-	}
-
-	components, err := loadComponentsDefinition(componentsDefinitionYAML)
-	if err != nil {
-		return err
-	}
-
-	doc.ComponentsDefinition = components
-	return nil
-}
-
-func loadComponentsDefinition(data []byte) (map[string]config.ComponentConfig, error) {
-	if len(data) == 0 {
-		return nil, fmt.Errorf("components definition asset is empty")
-	}
-
-	var payload struct {
-		ComponentsDefinition map[string]config.ComponentConfig `json:"componentsDefinition" yaml:"componentsDefinition"`
-	}
-
-	if err := yaml.Unmarshal(data, &payload); err != nil {
-		return nil, fmt.Errorf("parse components definition: %w", err)
-	}
-
-	if len(payload.ComponentsDefinition) == 0 {
-		return nil, fmt.Errorf("components definition asset missing entries")
-	}
-
-	return payload.ComponentsDefinition, nil
 }

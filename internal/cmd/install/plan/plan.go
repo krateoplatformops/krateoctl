@@ -9,11 +9,9 @@ import (
 	"os"
 
 	"github.com/krateoplatformops/krateoctl/internal/cmd/install/shared"
-	"github.com/krateoplatformops/krateoctl/internal/config"
 	"github.com/krateoplatformops/krateoctl/internal/diff"
 	"github.com/krateoplatformops/krateoctl/internal/install/state"
 	"github.com/krateoplatformops/krateoctl/internal/subcommands"
-	"github.com/krateoplatformops/krateoctl/internal/ui"
 	"github.com/krateoplatformops/krateoctl/internal/util/kube"
 	"gopkg.in/yaml.v3"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -31,6 +29,7 @@ type planCmd struct {
 	configFile     string
 	profile        string
 	namespace      string
+	installType    string
 	diffInstalled  bool
 	output         bool
 	version        string
@@ -63,6 +62,8 @@ func (c *planCmd) Usage() string {
 	fmt.Fprint(&wri, "        optional profile name (e.g. dev, prod)\n")
 	fmt.Fprint(&wri, "  --namespace string\n")
 	fmt.Fprintf(&wri, "        namespace where the installation snapshot is stored (default \"%s\")\n", shared.DefaultNamespace)
+	fmt.Fprint(&wri, "  --type string\n")
+	fmt.Fprint(&wri, "        choose which file variant to use. Supported values: kind, nodeport, loadbalancer, ingress. For example, kind looks for krateo.kind.yaml and files like pre-upgrade.kind.yaml. nodeport looks for krateo.nodeport.yaml and files like pre-upgrade.nodeport.yaml. (default \"nodeport\")\n")
 	fmt.Fprint(&wri, "  --diff-installed\n")
 	fmt.Fprint(&wri, "        compare computed plan against the stored installation snapshot\n")
 	fmt.Fprint(&wri, "  --output\n")
@@ -82,6 +83,8 @@ func (c *planCmd) Usage() string {
 	fmt.Fprint(&wri, "    profile-specific files like krateo-overrides.<profile>.yaml.\n")
 	fmt.Fprint(&wri, "  - Components and steps are filtered according to the active profile; disabled steps\n")
 	fmt.Fprint(&wri, "    are still shown but include 'skip: true' in the output.\n")
+	fmt.Fprint(&wri, "  - Type-specific files such as pre-upgrade.nodeport.yaml are used first.\n")
+	fmt.Fprint(&wri, "    If no type-specific file exists, the generic file pre-upgrade.yaml is used.\n")
 	fmt.Fprint(&wri, "  - When --output is set, computed steps are written as a stream of YAML documents,\n")
 	fmt.Fprint(&wri, "    one per step, including 'id', 'type', optional 'skip', and 'with' section.\n\n")
 
@@ -94,6 +97,14 @@ func (c *planCmd) Usage() string {
 	fmt.Fprint(&wri, "  krateoctl install plan --config ./my-krateo.yaml\n\n")
 	fmt.Fprint(&wri, "  # Preview with a profile\n")
 	fmt.Fprint(&wri, "  krateoctl install plan --version v1.0.0 --profile dev > plan.yaml\n\n")
+	fmt.Fprint(&wri, "  # Preview using kind-specific files such as krateo.kind.yaml\n")
+	fmt.Fprint(&wri, "  krateoctl install plan --config ./krateo.yaml --type kind\n\n")
+	fmt.Fprint(&wri, "  # Preview using nodeport-specific files such as krateo.nodeport.yaml\n")
+	fmt.Fprint(&wri, "  krateoctl install plan --config ./krateo.yaml --type nodeport\n\n")
+	fmt.Fprint(&wri, "  # Preview using loadbalancer-specific files such as krateo.loadbalancer.yaml\n")
+	fmt.Fprint(&wri, "  krateoctl install plan --config ./krateo.yaml --type loadbalancer\n\n")
+	fmt.Fprint(&wri, "  # Preview using ingress-specific files such as krateo.ingress.yaml\n")
+	fmt.Fprint(&wri, "  krateoctl install plan --config ./krateo.yaml --type ingress\n\n")
 
 	return wri.String()
 }
@@ -104,6 +115,7 @@ func (c *planCmd) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.configFile, "config", shared.DefaultConfigPath, "path to local configuration file")
 	f.StringVar(&c.profile, "profile", "", "optional profile name")
 	f.StringVar(&c.namespace, "namespace", shared.DefaultNamespace, "kubernetes namespace where the installation snapshot is stored")
+	f.StringVar(&c.installType, "type", "nodeport", "choose which file variant to use: kind, nodeport, loadbalancer, or ingress")
 	f.BoolVar(&c.diffInstalled, "diff-installed", false, "compare the computed plan with the stored installation snapshot")
 	f.BoolVar(&c.output, "output", false, "output computed plan steps as multi-document YAML")
 	f.BoolVar(&c.skipValidation, "skip-validation", false, "skip configuration validation")
@@ -111,40 +123,29 @@ func (c *planCmd) SetFlags(f *flag.FlagSet) {
 }
 
 func (c *planCmd) ensureDeps() {
-	if c.namespace == "" {
-		c.namespace = shared.DefaultNamespace
-	}
 	if c.restConfigFn == nil {
 		c.restConfigFn = kube.RestConfig
 	}
 	if c.stateFactory == nil {
-		c.stateFactory = func(cfg *rest.Config, namespace string) (state.Store, error) {
-			return state.NewStore(cfg, namespace)
-		}
+		c.stateFactory = shared.DefaultStateStoreFactory
 	}
-	if c.stateName == "" {
-		c.stateName = state.DefaultInstallationName
-	}
+	c.namespace = shared.EnsureNamespace(c.namespace)
+	c.stateName = shared.EnsureStateName(c.stateName)
 }
 
 func (c *planCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
 	c.ensureDeps()
 
 	// Enable debug mode from flag or environment variable
-	debugMode := c.debug || os.Getenv(shared.KRATEOCTL_DEBUG_ENV) != ""
-	logLevel := ui.LevelInfo
-	if debugMode {
-		logLevel = ui.LevelDebug
-	}
-	l := ui.NewLogger(os.Stderr, logLevel)
+	l := shared.NewLogger(os.Stderr, c.debug || os.Getenv(shared.KRATEOCTL_DEBUG_ENV) != "")
 
-	result, err := shared.LoadConfigAndSteps(config.LoadOptions{
-		ConfigPath:        c.configFile,
-		UserOverridesPath: shared.DefaultOverridesPath,
-		Profile:           c.profile,
-		Version:           c.version,
-		Repository:        c.repository,
-	}, l.Info, c.skipValidation)
+	result, err := shared.LoadConfigAndSteps(shared.NewLoadOptions(shared.LoadOptionsInput{
+		ConfigFile:       c.configFile,
+		Profile:          c.profile,
+		Version:          c.version,
+		Repository:       c.repository,
+		InstallationType: c.installType,
+	}), l.Info, c.skipValidation)
 	if err != nil {
 		l.Error("Failed to load configuration: %v", err)
 		return subcommands.ExitFailure

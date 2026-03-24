@@ -32,6 +32,11 @@ func LoadConfigAndSteps(opts config.LoadOptions, logger func(string, ...any), sk
 		return nil, fmt.Errorf("Failed to load configuration: %w", err)
 	}
 
+	return BuildLoadResult(data, logger, skipValidation)
+}
+
+// BuildLoadResult validates raw configuration data and resolves the active steps.
+func BuildLoadResult(data map[string]any, logger func(string, ...any), skipValidation bool) (*LoadResult, error) {
 	cfg, err := config.NewConfig(data)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to build configuration: %w", err)

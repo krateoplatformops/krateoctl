@@ -5,9 +5,12 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"math/big"
 
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/applier"
+	"github.com/krateoplatformops/krateoctl/internal/dynamic/getter"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
 )
 
@@ -25,6 +28,34 @@ func GenerateRandomKey(length int) (string, error) {
 		return "", fmt.Errorf("failed to generate random bytes: %w", err)
 	}
 	return base64.StdEncoding.EncodeToString(bytes), nil
+}
+
+// GenerateRandomPassword creates a random password containing only letters and numbers (URL-safe)
+func GenerateRandomPassword(length int) (string, error) {
+	const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+	password := make([]byte, length)
+	charsetLen := big.NewInt(int64(len(charset)))
+
+	for i := 0; i < length; i++ {
+		randomIndex, err := rand.Int(rand.Reader, charsetLen)
+		if err != nil {
+			return "", fmt.Errorf("failed to generate random password: %w", err)
+		}
+		password[i] = charset[randomIndex.Int64()]
+	}
+
+	return string(password), nil
+}
+
+// secretExists checks if a secret already exists in the cluster
+func secretExists(ctx context.Context, g *getter.Getter, namespace, secretName string) bool {
+	opts := getter.GetOptions{
+		GVK:       schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Secret"},
+		Namespace: namespace,
+		Name:      secretName,
+	}
+	_, err := g.Get(ctx, opts)
+	return err == nil
 }
 
 // CreateJWTSigningSecret creates the JWT signing secret with a random key
@@ -50,7 +81,7 @@ func CreateJWTSigningSecret(ctx context.Context, namespace string) (*unstructure
 
 // CreateKrateoDbSecret creates the secret used by resources-stack and events-stack components
 func CreateKrateoDbSecret(ctx context.Context, namespace string) (*unstructured.Unstructured, error) {
-	dbPass, err := GenerateRandomKey(16)
+	dbPass, err := GenerateRandomPassword(16)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate database password: %w", err)
 	}
@@ -76,7 +107,7 @@ func createKrateoDbSecretWithPassword(namespace, password string) *unstructured.
 
 // CreateKrateoDbUserSecret creates the secret for the CNPG cluster
 func CreateKrateoDbUserSecret(ctx context.Context, namespace string) (*unstructured.Unstructured, error) {
-	password, err := GenerateRandomKey(16)
+	password, err := GenerateRandomPassword(16)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate user password: %w", err)
 	}
@@ -100,34 +131,52 @@ func createKrateoDbUserSecretWithPassword(namespace, password string) *unstructu
 	return secret
 }
 
-// InitializeSecrets creates all required secrets in the cluster
+// InitializeSecrets creates all required secrets in the cluster if they don't already exist
 func InitializeSecrets(ctx context.Context, cfg *rest.Config, namespace string) error {
 	appl, err := applier.NewApplier(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to create applier: %w", err)
 	}
 
-	// Generate a shared password for both db and db-user secrets to ensure they are consistent
-	sharedPassword, err := GenerateRandomKey(16)
+	g, err := getter.NewGetter(cfg)
 	if err != nil {
-		return fmt.Errorf("failed to generate shared password: %w", err)
+		return fmt.Errorf("failed to create getter: %w", err)
 	}
+
+	// Only generate passwords if needed (secrets don't exist)
+	var sharedPassword string
 
 	secrets := []*unstructured.Unstructured{}
 
-	jwtSecret, err := CreateJWTSigningSecret(ctx, namespace)
-	if err != nil {
-		return fmt.Errorf("failed to create JWT secret: %w", err)
+	// JWT Secret
+	if !secretExists(ctx, g, namespace, JWTSecretName) {
+		jwtSecret, err := CreateJWTSigningSecret(ctx, namespace)
+		if err != nil {
+			return fmt.Errorf("failed to create JWT secret: %w", err)
+		}
+		secrets = append(secrets, jwtSecret)
 	}
-	secrets = append(secrets, jwtSecret)
 
-	// Use the shared password for db and db-user secrets to ensure they are consistent
-	krateoDbSecret := createKrateoDbSecretWithPassword(namespace, sharedPassword)
-	secrets = append(secrets, krateoDbSecret)
+	// DB Secrets - use shared password only if either secret needs to be created
+	if !secretExists(ctx, g, namespace, KrateoDbSecretName) || !secretExists(ctx, g, namespace, KrateoDbUserSecretName) {
+		// Generate shared password only if at least one of the secrets doesn't exist
+		sharedPassword, err = GenerateRandomPassword(16)
+		if err != nil {
+			return fmt.Errorf("failed to generate shared password: %w", err)
+		}
 
-	krateoDbUserSecret := createKrateoDbUserSecretWithPassword(namespace, sharedPassword)
-	secrets = append(secrets, krateoDbUserSecret)
+		if !secretExists(ctx, g, namespace, KrateoDbSecretName) {
+			krateoDbSecret := createKrateoDbSecretWithPassword(namespace, sharedPassword)
+			secrets = append(secrets, krateoDbSecret)
+		}
 
+		if !secretExists(ctx, g, namespace, KrateoDbUserSecretName) {
+			krateoDbUserSecret := createKrateoDbUserSecretWithPassword(namespace, sharedPassword)
+			secrets = append(secrets, krateoDbUserSecret)
+		}
+	}
+
+	// Apply only the secrets that don't exist
 	for _, secret := range secrets {
 		gvk := secret.GetObjectKind().GroupVersionKind()
 		opts := applier.ApplyOptions{

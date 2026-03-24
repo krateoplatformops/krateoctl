@@ -1,18 +1,19 @@
 package apply
 
 import (
-	"bytes"
 	"context"
 	"flag"
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/krateoplatformops/krateoctl/internal/cmd/install/secrets"
 	"github.com/krateoplatformops/krateoctl/internal/cmd/install/shared"
-	"github.com/krateoplatformops/krateoctl/internal/config"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/applier"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/deletor"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/getter"
+	"github.com/krateoplatformops/krateoctl/internal/install/lifecycle"
 	"github.com/krateoplatformops/krateoctl/internal/install/state"
 	"github.com/krateoplatformops/krateoctl/internal/subcommands"
 	"github.com/krateoplatformops/krateoctl/internal/ui"
@@ -24,6 +25,10 @@ import (
 
 type workflowRunner interface {
 	Run(context.Context, *types.Workflow, func(*types.Step) bool, workflows.StepNotifier) []workflows.StepResult[any]
+}
+
+type sharedWorkflowRunner struct {
+	workflowRunner
 }
 
 type restConfigProvider func() (*rest.Config, error)
@@ -44,6 +49,7 @@ type applyCmd struct {
 	profile        string
 	version        string
 	repository     string
+	installType    string
 	debug          bool
 	initSecrets    bool // Hidden utility flag for generating sample secrets
 	skipValidation bool // Skip configuration validation
@@ -83,23 +89,20 @@ func (c *applyCmd) ensureDeps() {
 		}
 	}
 	if c.stateFactory == nil {
-		c.stateFactory = func(cfg *rest.Config, namespace string) (state.Store, error) {
-			return state.NewStore(cfg, namespace)
-		}
+		c.stateFactory = shared.DefaultStateStoreFactory
 	}
 	if c.ensureCRDFn == nil {
 		c.ensureCRDFn = state.EnsureCRD
 	}
-	if c.stateName == "" {
-		c.stateName = state.DefaultInstallationName
-	}
+	c.namespace = shared.EnsureNamespace(c.namespace)
+	c.stateName = shared.EnsureStateName(c.stateName)
 }
 
 func (c *applyCmd) Name() string     { return "apply" }
 func (c *applyCmd) Synopsis() string { return "apply configuration changes to cluster" }
 
 func (c *applyCmd) Usage() string {
-	wri := bytes.Buffer{}
+	wri := strings.Builder{}
 	fmt.Fprintf(&wri, "%s. Load the installation config and execute the workflow.\n\n", c.Synopsis())
 	fmt.Fprint(&wri, "USAGE:\n  krateoctl install apply [FLAGS]\n\n")
 	fmt.Fprint(&wri, "FLAGS:\n")
@@ -107,6 +110,7 @@ func (c *applyCmd) Usage() string {
 	fmt.Fprint(&wri, "  --repository string   GitHub repository URL for releases (default \"https://github.com/krateoplatformops/releases\")\n")
 	fmt.Fprintf(&wri, "  --config string       path to local configuration file (default \"%s\", used when --version is not set)\n", shared.DefaultConfigPath)
 	fmt.Fprintf(&wri, "  --namespace string    target namespace (default \"%s\")\n", shared.DefaultNamespace)
+	fmt.Fprint(&wri, "  --type string         choose which file variant to use. Supported values: kind, nodeport, loadbalancer, ingress. For example, kind looks for krateo.kind.yaml and files like pre-upgrade.kind.yaml. nodeport looks for krateo.nodeport.yaml and files like pre-upgrade.nodeport.yaml. (default \"nodeport\")\n")
 	fmt.Fprint(&wri, "  --profile string      optional profile name (e.g. dev, prod)\n")
 	fmt.Fprint(&wri, "  --skip-validation     skip configuration validation (useful for emergency recovery)\n")
 	fmt.Fprint(&wri, "  --debug               enable debug-level logging (can also use KRATEOCTL_DEBUG env var)\n\n")
@@ -114,6 +118,8 @@ func (c *applyCmd) Usage() string {
 	fmt.Fprint(&wri, "  Remote mode: When --version is specified, config is fetched from the releases\n")
 	fmt.Fprint(&wri, "               repository instead of local filesystem.\n")
 	fmt.Fprint(&wri, "  Local mode:  When --version is not specified, config is read from local files.\n\n")
+	fmt.Fprint(&wri, "  File selection: Type-specific files such as pre-upgrade.nodeport.yaml are used first.\n")
+	fmt.Fprint(&wri, "                  If no type-specific file exists, the generic file pre-upgrade.yaml is used.\n\n")
 	fmt.Fprint(&wri, "EXAMPLES:\n\n")
 	fmt.Fprint(&wri, "  # Apply from a specific release version (remote mode)\n")
 	fmt.Fprint(&wri, "  krateoctl install apply --version v1.0.0\n\n")
@@ -121,6 +127,14 @@ func (c *applyCmd) Usage() string {
 	fmt.Fprint(&wri, "  krateoctl install apply --version v1.0.0 --repository https://github.com/myorg/krateo-releases\n\n")
 	fmt.Fprint(&wri, "  # Apply using local config file\n")
 	fmt.Fprint(&wri, "  krateoctl install apply --config ./my-krateo.yaml\n\n")
+	fmt.Fprint(&wri, "  # Apply using nodeport-specific files such as krateo.nodeport.yaml or pre-upgrade.nodeport.yaml\n")
+	fmt.Fprint(&wri, "  krateoctl install apply --config ./krateo.yaml --type nodeport\n\n")
+	fmt.Fprint(&wri, "  # Apply using nodeport-specific files such as krateo.nodeport.yaml\n")
+	fmt.Fprint(&wri, "  krateoctl install apply --config ./krateo.yaml --type nodeport\n\n")
+	fmt.Fprint(&wri, "  # Apply using loadbalancer-specific files such as krateo.loadbalancer.yaml\n")
+	fmt.Fprint(&wri, "  krateoctl install apply --config ./krateo.yaml --type loadbalancer\n\n")
+	fmt.Fprint(&wri, "  # Apply using ingress-specific files such as krateo.ingress.yaml\n")
+	fmt.Fprint(&wri, "  krateoctl install apply --config ./krateo.yaml --type ingress\n\n")
 	return wri.String()
 }
 
@@ -129,6 +143,7 @@ func (c *applyCmd) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.repository, "repository", "", "GitHub repository URL for releases")
 	f.StringVar(&c.configFile, "config", shared.DefaultConfigPath, "path to local configuration file")
 	f.StringVar(&c.namespace, "namespace", shared.DefaultNamespace, "kubernetes namespace for deployment")
+	f.StringVar(&c.installType, "type", "nodeport", "choose which file variant to use: kind, nodeport, loadbalancer, or ingress")
 	f.StringVar(&c.profile, "profile", "", "optional profile name")
 	f.BoolVar(&c.skipValidation, "skip-validation", false, "skip configuration validation")
 	f.BoolVar(&c.debug, "debug", false, "enable debug-level logging")
@@ -141,26 +156,24 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 
 	// 1. Initialize UI and Logging
 	// Enable debug mode from flag or environment variable
-	debugMode := c.debug || os.Getenv(shared.KRATEOCTL_DEBUG_ENV) != ""
-	logLevel := ui.LevelInfo
-	if debugMode {
-		logLevel = ui.LevelDebug
-	}
-
 	spin := ui.NewSpinner(os.Stdout)
-	l := ui.NewLogger(spin, logLevel)
+	l := shared.NewLogger(spin, c.debug || os.Getenv(shared.KRATEOCTL_DEBUG_ENV) != "")
 	defer spin.Stop("")
+	lifecycleManager := lifecycle.NewManager(c.namespace, func(cfg *rest.Config) (*getter.Getter, error) {
+		return c.getterFactory(cfg)
+	})
 
-	var installationStore state.Store
+	// Generate a timestamp for unique job names (to avoid conflicts with previously failed jobs)
+	jobNameSuffix := time.Now().Format("20060102-150405")
 
 	// 2. Load Configuration
-	result, err := shared.LoadConfigAndSteps(config.LoadOptions{
-		ConfigPath:        c.configFile,
-		UserOverridesPath: shared.DefaultOverridesPath,
-		Profile:           c.profile,
-		Version:           c.version,
-		Repository:        c.repository,
-	}, l.Info, c.skipValidation)
+	result, err := shared.LoadConfigAndSteps(shared.NewLoadOptions(shared.LoadOptionsInput{
+		ConfigFile:       c.configFile,
+		Profile:          c.profile,
+		Version:          c.version,
+		Repository:       c.repository,
+		InstallationType: c.installType,
+	}), l.Info, c.skipValidation)
 	if err != nil {
 		l.Error("Failed to load configuration: %v", err)
 		return subcommands.ExitFailure
@@ -169,12 +182,6 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 	if len(result.Steps) == 0 {
 		l.Info("ℹ No steps configured")
 		return subcommands.ExitSuccess
-	}
-
-	snapshot, err := state.BuildSnapshot(result.Config, result.Steps)
-	if err != nil {
-		l.Error("Failed to build installation snapshot: %v", err)
-		return subcommands.ExitFailure
 	}
 
 	// 3. Setup Kubernetes Connection
@@ -201,16 +208,23 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 		l.Info("✓ Sample secrets created successfully (%s, %s, %s) in namespace '%s'", secrets.KrateoDbSecretName, secrets.KrateoDbUserSecretName, secrets.JWTSecretName, c.namespace)
 	}
 
-	installationStore, err = c.stateFactory(rc, c.namespace)
+	// 4.5. Apply Pre-Upgrade Manifests (if they exist)
+	a, err := c.applierFactory(rc)
 	if err != nil {
-		l.Error("Failed to initialize installation state store: %v", err)
+		l.Error("Failed to initialize applier: %v", err)
 		return subcommands.ExitFailure
 	}
 
-	// 4. Initialize Workflow
-	wf, err := c.initWorkflow(rc, l)
-	if err != nil {
-		l.Error("Initialization failed: %v", err)
+	if err := lifecycleManager.Apply(ctx, a, l, lifecycle.ApplyOptions{
+		Phase:            "pre-upgrade",
+		Version:          c.version,
+		Repository:       c.repository,
+		ConfigFile:       c.configFile,
+		RestConfig:       rc,
+		JobNameSuffix:    jobNameSuffix,
+		InstallationType: c.installType,
+	}); err != nil {
+		l.Error("Failed to apply pre-upgrade manifests: %v", err)
 		return subcommands.ExitFailure
 	}
 
@@ -222,24 +236,62 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 	spin.SetPrefix("⚙  ")
 	spin.Start()
 
-	// Pass the Progress Reporter (moved to a local helper)
-	results := wf.Run(ctx, &types.Workflow{Steps: result.Steps}, func(s *types.Step) bool {
-		return s.Skip
-	}, c.createProgressReporter(spin, l, len(result.Steps)))
-
+	// Use the shared workflow executor for the core apply path.
+	execResult, err := shared.ExecuteWorkflow(ctx, rc, shared.ExecuteWorkflowOptions{
+		Namespace:        c.namespace,
+		StateName:        c.stateName,
+		Logger:           l,
+		Result:           result,
+		ProgressReporter: c.createProgressReporter(spin, l, len(result.Steps)),
+		SaveState:        false,
+	}, shared.WorkflowDeps{
+		GetterFactory:  shared.GetterFactory(c.getterFactory),
+		ApplierFactory: shared.ApplierFactory(c.applierFactory),
+		DeletorFactory: shared.DeletorFactory(c.deletorFactory),
+		WorkflowFactory: func(opts workflows.Opts) (shared.WorkflowRunner, error) {
+			wf, err := c.workflowFactory(opts)
+			if err != nil {
+				return nil, err
+			}
+			return sharedWorkflowRunner{workflowRunner: wf}, nil
+		},
+		ErrEvaluator: shared.ErrEvaluator(c.errEvaluator),
+		StateFactory: shared.StateStoreFactory(c.stateFactory),
+	})
 	spin.Stop("")
 
 	// 6. Final Report
 	l.Info("═════════════════════════════════════════════════════════════")
-	c.printSummary(l, result.Steps, results)
+	if execResult != nil {
+		shared.LogWorkflowResults(l, result.Steps, execResult.Results)
+	}
 
-	if err := c.errEvaluator(results); err != nil {
+	if err != nil {
 		l.Error("\nWorkflow completed with errors.")
 		return subcommands.ExitFailure
 	}
 
-	if installationStore != nil && snapshot != nil {
-		if err := installationStore.Save(ctx, c.stateName, snapshot); err != nil {
+	// 6.5. Apply Post-Upgrade Manifests (if they exist)
+	if err := lifecycleManager.Apply(ctx, a, l, lifecycle.ApplyOptions{
+		Phase:            "post-upgrade",
+		Version:          c.version,
+		Repository:       c.repository,
+		ConfigFile:       c.configFile,
+		RestConfig:       rc,
+		JobNameSuffix:    jobNameSuffix,
+		InstallationType: c.installType,
+	}); err != nil {
+		l.Error("Failed to apply post-upgrade manifests: %v", err)
+		return subcommands.ExitFailure
+	}
+
+	if execResult != nil && execResult.Snapshot != nil {
+		store, storeErr := c.stateFactory(rc, c.namespace)
+		if storeErr != nil {
+			l.Error("Failed to initialize installation state store: %v", storeErr)
+			return subcommands.ExitFailure
+		}
+		if err := store.Save(ctx, c.stateName, execResult.Snapshot); err != nil {
 			l.Warn("⚠ Unable to persist installation snapshot: %v", err)
 		} else {
 			l.Info("✓ Installation snapshot saved as %q with apiVersion %q and kind %q in the namespace %q", c.stateName, "krateo.io/v1", "Installation", c.namespace)
@@ -248,31 +300,6 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 
 	l.Info("✓ Successfully applied %d steps\n", len(result.Steps))
 	return subcommands.ExitSuccess
-}
-
-// initWorkflow abstracts the creation of the workflow and its clients.
-func (c *applyCmd) initWorkflow(rc *rest.Config, l *ui.Logger) (workflowRunner, error) {
-	g, err := c.getterFactory(rc)
-	if err != nil {
-		return nil, fmt.Errorf("getter: %w", err)
-	}
-	a, err := c.applierFactory(rc)
-	if err != nil {
-		return nil, fmt.Errorf("applier: %w", err)
-	}
-	d, err := c.deletorFactory(rc)
-	if err != nil {
-		return nil, fmt.Errorf("deletor: %w", err)
-	}
-
-	return c.workflowFactory(workflows.Opts{
-		Getter:    g,
-		Applier:   a,
-		Deletor:   d,
-		Logger:    l.Debug,
-		Cfg:       rc,
-		Namespace: c.namespace,
-	})
 }
 
 func (c *applyCmd) createProgressReporter(spin *ui.Spinner, l *ui.Logger, total int) workflows.StepNotifier {
@@ -285,21 +312,5 @@ func (c *applyCmd) createProgressReporter(spin *ui.Spinner, l *ui.Logger, total 
 
 		l.V(ui.LevelDebug).Info("Processing workflow step: index=%d id=%s type=%s",
 			idx+1, step.ID, step.Type)
-	}
-}
-
-func (c *applyCmd) printSummary(l *ui.Logger, steps []*types.Step, results []workflows.StepResult[any]) {
-	for i, step := range steps {
-		res := results[i]
-		switch {
-		case res.ID() == "":
-			l.Info("[PEND] %s (%s) not executed", step.ID, step.Type)
-		case step.Skip:
-			l.Info("[SKIP] %s (%s)", step.ID, step.Type)
-		case res.Err() != nil:
-			l.Error("%s (%s) failed: %v", step.ID, step.Type, res.Err())
-		default:
-			l.Info("✓ %s (%s)", step.ID, step.Type)
-		}
 	}
 }

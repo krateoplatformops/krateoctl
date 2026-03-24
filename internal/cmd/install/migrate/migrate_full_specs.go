@@ -6,19 +6,16 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	_ "embed"
 
 	"github.com/krateoplatformops/krateoctl/internal/cmd/install/shared"
-	"github.com/krateoplatformops/krateoctl/internal/config"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/applier"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/deletor"
 	"github.com/krateoplatformops/krateoctl/internal/dynamic/getter"
 	"github.com/krateoplatformops/krateoctl/internal/install/migrate/legacy"
 	"github.com/krateoplatformops/krateoctl/internal/install/state"
 	"github.com/krateoplatformops/krateoctl/internal/subcommands"
-	"github.com/krateoplatformops/krateoctl/internal/ui"
 	"github.com/krateoplatformops/krateoctl/internal/util/kube"
 	"github.com/krateoplatformops/krateoctl/internal/workflows"
 	"github.com/krateoplatformops/krateoctl/internal/workflows/types"
@@ -42,6 +39,11 @@ type ensureCRDFunc func(context.Context, *rest.Config) error
 type workflowRunner interface {
 	Run(context.Context, *types.Workflow, func(*types.Step) bool, workflows.StepNotifier) []workflows.StepResult[any]
 }
+
+type sharedWorkflowRunner struct {
+	workflowRunner
+}
+
 type getterFactory func(*rest.Config) (*getter.Getter, error)
 type applierFactory func(*rest.Config) (*applier.Applier, error)
 type deletorFactory func(*rest.Config) (*deletor.Deletor, error)
@@ -53,6 +55,7 @@ func CommandFullSpecs() subcommands.Command {
 }
 
 type migrateFullSpecsCmd struct {
+	installType         string
 	name                string
 	namespace           string
 	outputPath          string
@@ -78,7 +81,7 @@ type migrateFullSpecsCmd struct {
 func (c *migrateFullSpecsCmd) Name() string { return "migrate-full" }
 
 func (c *migrateFullSpecsCmd) Synopsis() string {
-	return "fully migrate a legacy KrateoPlatformOps resource to new format (automated workflow)"
+	return "fully migrate a legacy KrateoPlatformOps resource with automatic cutover"
 }
 
 func (c *migrateFullSpecsCmd) Usage() string {
@@ -89,12 +92,36 @@ func (c *migrateFullSpecsCmd) Usage() string {
 	buf.WriteString("FLAGS:\n\n")
 	fmt.Fprintf(buf, "  --namespace string\n        namespace that contains the KrateoPlatformOps resource (default \"%s\")\n", shared.DefaultNamespace)
 	buf.WriteString("  --name string\n        name of the KrateoPlatformOps resource (default \"krateo\")\n")
-	fmt.Fprintf(buf, "  --output string\n        path to write the generated krateo.yaml (default \"%s\")\n", shared.DefaultConfigPath)
+	buf.WriteString("  --output string\n        optional path to save the generated krateo.yaml before applying it\n")
+	buf.WriteString("  --type string\n        installation type: nodeport, loadbalancer, or ingress (default \"nodeport\")\n")
 	buf.WriteString("  --installer-namespace string\n        namespace where the installer is deployed (default: same as --namespace)\n")
 	buf.WriteString("  --installer-release string\n        Helm release name for the installer (default \"installer\")\n")
 	buf.WriteString("  --installer-crd-release string\n        Helm release name for the installer CRD (default \"installer-crd\")\n")
 	buf.WriteString("  --force\n        overwrite the output file if it already exists\n")
-	buf.WriteString("  --debug\n        enable debug-level logging (can also use KRATEOCTL_DEBUG env var)\n")
+	buf.WriteString("  --debug\n        enable debug-level logging (can also use KRATEOCTL_DEBUG env var)\n\n")
+	buf.WriteString("PREREQUISITES:\n\n")
+	buf.WriteString("  Use this command only for Krateo 2.7.0 installations managed by the installer controller.\n\n")
+	buf.WriteString("WHAT THIS COMMAND DOES:\n\n")
+	buf.WriteString("  1. Reads the legacy KrateoPlatformOps resource from the cluster.\n")
+	buf.WriteString("  2. Converts it into a new krateo.yaml file.\n")
+	buf.WriteString("     If --output is set, the file is also saved to disk.\n")
+	buf.WriteString("  3. Scales the old installer down.\n")
+	buf.WriteString("  4. Applies the new krateo.yaml configuration automatically.\n")
+	buf.WriteString("  5. Deletes the old KrateoPlatformOps resource.\n")
+	buf.WriteString("  6. Uninstalls the old installer Helm releases.\n\n")
+	buf.WriteString("WHEN TO USE IT:\n\n")
+	buf.WriteString("  Use this command when you want the full migration to be handled automatically.\n")
+	buf.WriteString("  It performs the cutover steps for you after generating krateo.yaml.\n\n")
+	buf.WriteString("WHEN TO USE SIMPLE MIGRATE INSTEAD:\n\n")
+	buf.WriteString("  Use krateoctl install migrate when you want to generate the file first, review it,\n")
+	buf.WriteString("  and run plan/apply manually in separate steps.\n\n")
+	buf.WriteString("EXAMPLES:\n\n")
+	buf.WriteString("  # Run the full automatic migration\n")
+	buf.WriteString("  krateoctl install migrate-full --type nodeport\n\n")
+	buf.WriteString("  # Run the full automatic migration and also save the generated file\n")
+	buf.WriteString("  krateoctl install migrate-full --type nodeport --output ./krateo.yaml\n\n")
+	buf.WriteString("  # Run the full migration when installer releases use custom names\n")
+	buf.WriteString("  krateoctl install migrate-full --type ingress --installer-release my-installer --installer-crd-release my-installer-crd\n")
 
 	return buf.String()
 }
@@ -102,7 +129,8 @@ func (c *migrateFullSpecsCmd) Usage() string {
 func (c *migrateFullSpecsCmd) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.namespace, "namespace", shared.DefaultNamespace, "namespace that contains the KrateoPlatformOps resource")
 	f.StringVar(&c.name, "name", "krateo", "name of the KrateoPlatformOps resource")
-	f.StringVar(&c.outputPath, "output", shared.DefaultConfigPath, "path to write the generated krateo.yaml")
+	f.StringVar(&c.outputPath, "output", "", "optional path to save the generated krateo.yaml")
+	f.StringVar(&c.installType, "type", "nodeport", "installation type: nodeport, loadbalancer, or ingress")
 	f.StringVar(&c.installerNamespace, "installer-namespace", "", "namespace where the installer is deployed")
 	f.StringVar(&c.installerRelease, "installer-release", "installer", "Helm release name for the installer")
 	f.StringVar(&c.installerCRDRelease, "installer-crd-release", "installer-crd", "Helm release name for the installer CRD")
@@ -111,15 +139,6 @@ func (c *migrateFullSpecsCmd) SetFlags(f *flag.FlagSet) {
 }
 
 func (c *migrateFullSpecsCmd) ensureDeps() {
-	if c.namespace == "" {
-		c.namespace = shared.DefaultNamespace
-	}
-	if c.outputPath == "" {
-		c.outputPath = shared.DefaultConfigPath
-	}
-	if c.installerNamespace == "" {
-		c.installerNamespace = c.namespace
-	}
 	if c.restConfigFn == nil {
 		c.restConfigFn = kube.RestConfig
 	}
@@ -137,9 +156,7 @@ func (c *migrateFullSpecsCmd) ensureDeps() {
 		}
 	}
 	if c.stateFactory == nil {
-		c.stateFactory = func(cfg *rest.Config, namespace string) (state.Store, error) {
-			return state.NewStore(cfg, namespace)
-		}
+		c.stateFactory = shared.DefaultStateStoreFactory
 	}
 	if c.ensureCRDFn == nil {
 		c.ensureCRDFn = state.EnsureCRD
@@ -163,17 +180,17 @@ func (c *migrateFullSpecsCmd) ensureDeps() {
 			return workflows.Err(results)
 		}
 	}
+	c.namespace = shared.EnsureNamespace(c.namespace)
+	if c.installerNamespace == "" {
+		c.installerNamespace = c.namespace
+	}
 }
 
 func (c *migrateFullSpecsCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	c.ensureDeps()
 
 	// Enable debug mode from flag or environment variable
-	logLevel := ui.LevelInfo
-	if c.debug || os.Getenv(shared.KRATEOCTL_DEBUG_ENV) != "" {
-		logLevel = ui.LevelDebug
-	}
-	logger := ui.NewLogger(os.Stderr, logLevel)
+	logger := shared.NewLogger(os.Stderr, c.debug || os.Getenv(shared.KRATEOCTL_DEBUG_ENV) != "")
 
 	rc, err := c.restConfigFn()
 	if err != nil {
@@ -188,8 +205,9 @@ func (c *migrateFullSpecsCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ..
 	}
 
 	// Step 1: Fetch legacy resource
+	var legacyObj *unstructured.Unstructured
 	logger.Info("Step 1/6: Fetching legacy KrateoPlatformOps CR...")
-	legacyObj, err := c.fetchLegacyResource(ctx, dyn)
+	legacyObj, err = fetchLegacyResource(ctx, dyn, c.namespace, c.name)
 	if err != nil {
 		logger.Error("Failed to read KrateoPlatformOps resource: %v", err)
 		return subcommands.ExitFailure
@@ -204,7 +222,7 @@ func (c *migrateFullSpecsCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ..
 		return subcommands.ExitFailure
 	}
 
-	if err := c.applyDefaultComponents(doc); err != nil {
+	if err := applyDefaultComponents(doc, c.installType); err != nil {
 		logger.Error("Failed to load components definition: %v", err)
 		return subcommands.ExitFailure
 	}
@@ -215,11 +233,20 @@ func (c *migrateFullSpecsCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ..
 		return subcommands.ExitFailure
 	}
 
-	if err := c.writeOutput(data); err != nil {
-		logger.Error("Failed to write %s: %v", c.outputPath, err)
-		return subcommands.ExitFailure
+	if c.outputPath != "" {
+		if err := writeOutputFile(writeOutputOptions{
+			outputPath: c.outputPath,
+			force:      c.force,
+			writeFile:  c.writeFile,
+			data:       data,
+		}); err != nil {
+			logger.Error("Failed to write %s: %v", c.outputPath, err)
+			return subcommands.ExitFailure
+		}
+		logger.Info("✓ Generated new configuration: %s", c.outputPath)
+	} else {
+		logger.Info("✓ Generated new configuration in memory")
 	}
-	logger.Info("✓ Generated new configuration: %s", c.outputPath)
 
 	// Step 3: Scale installer to 0
 	logger.Info("Step 3/6: Scaling installer to 0...")
@@ -238,11 +265,17 @@ func (c *migrateFullSpecsCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ..
 		return subcommands.ExitFailure
 	}
 
-	// Load and validate config
-	result, err := shared.LoadConfigAndSteps(config.LoadOptions{
-		ConfigPath:        c.outputPath,
-		UserOverridesPath: shared.DefaultOverridesPath,
-	}, logger.Debug, false)
+	var raw map[string]any
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		logger.Error("Failed to parse generated configuration: %v", err)
+		return subcommands.ExitFailure
+	}
+	if raw == nil {
+		raw = make(map[string]any)
+	}
+
+	// Load and validate the generated config directly from memory.
+	result, err := shared.BuildLoadResult(raw, logger.Debug, false)
 	if err != nil {
 		logger.Error("Failed to load generated configuration: %v", err)
 		return subcommands.ExitFailure
@@ -251,103 +284,54 @@ func (c *migrateFullSpecsCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ..
 	if len(result.Steps) == 0 {
 		logger.Info("ℹ No steps configured")
 	} else {
-		// Build installation snapshot
-		snapshot, err := state.BuildSnapshot(result.Config, result.Steps)
-		if err != nil {
-			logger.Error("Failed to build installation snapshot: %v", err)
-			return subcommands.ExitFailure
-		}
-
-		// Initialize workflow executor
-		g, err := c.getterFactory(rc)
-		if err != nil {
-			logger.Error("Failed to initialize getter: %v", err)
-			return subcommands.ExitFailure
-		}
-		a, err := c.applierFactory(rc)
-		if err != nil {
-			logger.Error("Failed to initialize applier: %v", err)
-			return subcommands.ExitFailure
-		}
-		d, err := c.deletorFactory(rc)
-		if err != nil {
-			logger.Error("Failed to initialize deletor: %v", err)
-			return subcommands.ExitFailure
-		}
-
-		wf, err := c.workflowFactory(workflows.Opts{
-			Getter:    g,
-			Applier:   a,
-			Deletor:   d,
-			Logger:    logger.Debug,
-			Cfg:       rc,
-			Namespace: c.namespace,
-		})
-		if err != nil {
-			logger.Error("Failed to initialize workflow: %v", err)
-			return subcommands.ExitFailure
-		}
-
 		logger.Info("⚡ Executing %d steps...", len(result.Steps))
 
-		// Execute workflow steps
-		results := wf.Run(ctx, &types.Workflow{Steps: result.Steps}, func(s *types.Step) bool {
-			return s.Skip
-		}, func(idx int, step *types.Step, skipped bool) {
-			status := "executing"
-			if skipped {
-				status = "skipped"
-			}
-			logger.Debug("Processing step %d/%d: %s (%s)", idx+1, len(result.Steps), step.ID, status)
-		})
-
-		// Evaluate workflow results
-		if err := c.errEvaluator(results); err != nil {
-			logger.Error("Workflow execution failed: %v", err)
-			// Print detailed results
-			for i, step := range result.Steps {
-				res := results[i]
-				switch {
-				case res.ID() == "":
-					logger.Info("[PEND] %s (%s) not executed", step.ID, step.Type)
-				case step.Skip:
-					logger.Info("[SKIP] %s (%s)", step.ID, step.Type)
-				case res.Err() != nil:
-					logger.Error("%s (%s) failed: %v", step.ID, step.Type, res.Err())
-				default:
-					logger.Info("✓ %s (%s)", step.ID, step.Type)
+		execResult, err := shared.ExecuteWorkflow(ctx, rc, shared.ExecuteWorkflowOptions{
+			Namespace: c.namespace,
+			StateName: state.DefaultInstallationName,
+			Logger:    logger,
+			Result:    result,
+			ProgressReporter: func(idx int, step *types.Step, skipped bool) {
+				status := "executing"
+				if skipped {
+					status = "skipped"
 				}
+				logger.Debug("Processing step %d/%d: %s (%s)", idx+1, len(result.Steps), step.ID, status)
+			},
+			SaveState: false,
+		}, shared.WorkflowDeps{
+			GetterFactory:  shared.GetterFactory(c.getterFactory),
+			ApplierFactory: shared.ApplierFactory(c.applierFactory),
+			DeletorFactory: shared.DeletorFactory(c.deletorFactory),
+			WorkflowFactory: func(opts workflows.Opts) (shared.WorkflowRunner, error) {
+				wf, err := c.workflowFactory(opts)
+				if err != nil {
+					return nil, err
+				}
+				return sharedWorkflowRunner{workflowRunner: wf}, nil
+			},
+			ErrEvaluator: shared.ErrEvaluator(c.errEvaluator),
+			StateFactory: shared.StateStoreFactory(c.stateFactory),
+		})
+		if err != nil {
+			logger.Error("Workflow execution failed: %v", err)
+			if execResult != nil {
+				shared.LogWorkflowResults(logger, result.Steps, execResult.Results)
 			}
 			return subcommands.ExitFailure
 		}
 
-		// Save installation state
-		installationStore, err := c.stateFactory(rc, c.namespace)
+		store, err := c.stateFactory(rc, c.namespace)
 		if err != nil {
 			logger.Error("Failed to initialize installation state store: %v", err)
 			return subcommands.ExitFailure
 		}
-
-		if err := installationStore.Save(ctx, state.DefaultInstallationName, snapshot); err != nil {
+		if err := store.Save(ctx, state.DefaultInstallationName, execResult.Snapshot); err != nil {
 			logger.Warn("⚠ Unable to persist installation snapshot: %v", err)
 		} else {
 			logger.Info("✓ Saved installation snapshot: %s/%s", c.namespace, state.DefaultInstallationName)
 		}
-
-		// Print step results
-		for i, step := range result.Steps {
-			res := results[i]
-			switch {
-			case res.ID() == "":
-				logger.Info("[PEND] %s (%s)", step.ID, step.Type)
-			case step.Skip:
-				logger.Info("[SKIP] %s (%s)", step.ID, step.Type)
-			case res.Err() != nil:
-				logger.Error("%s (%s) failed: %v", step.ID, step.Type, res.Err())
-			default:
-				logger.Info("✓ %s (%s)", step.ID, step.Type)
-			}
-		}
+		shared.LogWorkflowResults(logger, result.Steps, execResult.Results)
 		logger.Info("✓ Successfully applied %d steps", len(result.Steps))
 	}
 
@@ -382,30 +366,6 @@ func (c *migrateFullSpecsCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ..
 	logger.Info("========================================================================")
 
 	return subcommands.ExitSuccess
-}
-
-func (c *migrateFullSpecsCmd) fetchLegacyResource(ctx context.Context, dyn dynamic.Interface) (*unstructured.Unstructured, error) {
-	var lastErr error
-	for _, gvr := range legacyGVRs {
-		obj, err := dyn.Resource(gvr).Namespace(c.namespace).Get(ctx, c.name, metav1.GetOptions{})
-		switch {
-		case err == nil:
-			return obj, nil
-		case apierrors.IsNotFound(err):
-			lastErr = err
-			continue
-		case meta.IsNoMatchError(err):
-			lastErr = err
-			continue
-		default:
-			return nil, err
-		}
-	}
-
-	if lastErr == nil {
-		lastErr = fmt.Errorf("KrateoPlatformOps %s/%s not found", c.namespace, c.name)
-	}
-	return nil, lastErr
 }
 
 func (c *migrateFullSpecsCmd) scaleInstallerController(ctx context.Context, cfg *rest.Config, replicas int32) error {
@@ -492,42 +452,5 @@ func (c *migrateFullSpecsCmd) uninstallOldInstaller(ctx context.Context, cfg *re
 		return fmt.Errorf("failed to uninstall installer-crd chart: %w", err)
 	}
 
-	return nil
-}
-
-func (c *migrateFullSpecsCmd) writeOutput(data []byte) error {
-	if !c.force {
-		if _, err := os.Stat(c.outputPath); err == nil {
-			return fmt.Errorf("output file %s already exists (use --force to overwrite)", c.outputPath)
-		} else if !os.IsNotExist(err) {
-			return err
-		}
-	}
-
-	dir := filepath.Dir(c.outputPath)
-	if dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
-		}
-	}
-
-	if len(data) > 0 && data[len(data)-1] != '\n' {
-		data = append(data, '\n')
-	}
-
-	return c.writeFile(c.outputPath, data, 0o644)
-}
-
-func (c *migrateFullSpecsCmd) applyDefaultComponents(doc *config.Document) error {
-	if doc == nil {
-		return fmt.Errorf("document is nil")
-	}
-
-	components, err := loadComponentsDefinition(componentsDefinitionYAML)
-	if err != nil {
-		return err
-	}
-
-	doc.ComponentsDefinition = components
 	return nil
 }
