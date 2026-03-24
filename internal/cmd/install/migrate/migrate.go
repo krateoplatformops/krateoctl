@@ -59,7 +59,7 @@ type migrateCmd struct {
 
 func (c *migrateCmd) Name() string { return "migrate" }
 func (c *migrateCmd) Synopsis() string {
-	return "convert a legacy KrateoPlatformOps resource into krateo.yaml"
+	return "generate krateo.yaml from a legacy KrateoPlatformOps resource (manual migration)"
 }
 
 func (c *migrateCmd) Usage() string {
@@ -73,7 +73,35 @@ func (c *migrateCmd) Usage() string {
 	buf.WriteString("  --name string\n        name of the KrateoPlatformOps resource (default \"krateo\")\n")
 	fmt.Fprintf(buf, "  --output string\n        path to write the generated krateo.yaml (default \"%s\")\n", shared.DefaultConfigPath)
 	buf.WriteString("  --force\n        overwrite the output file if it already exists\n")
-	buf.WriteString("  --debug\n        enable debug-level logging (can also use KRATEOCTL_DEBUG env var)\n")
+	buf.WriteString("  --debug\n        enable debug-level logging (can also use KRATEOCTL_DEBUG env var)\n\n")
+	buf.WriteString("PREREQUISITES:\n\n")
+	buf.WriteString("  Use this command only for Krateo 2.7.0 installations managed by the installer controller.\n\n")
+	buf.WriteString("WHAT THIS COMMAND DOES:\n\n")
+	buf.WriteString("  1. Reads the legacy KrateoPlatformOps resource from the cluster.\n")
+	buf.WriteString("  2. Converts its spec into a new krateo.yaml file.\n")
+	buf.WriteString("  3. Writes the file to disk and stops.\n\n")
+	buf.WriteString("KRATEOCTL STEPS:\n\n")
+	buf.WriteString("  1. Connects to the cluster using the current kubeconfig.\n")
+	buf.WriteString("  2. Reads the legacy KrateoPlatformOps custom resource.\n")
+	buf.WriteString("  3. Converts the legacy spec into the new configuration format.\n")
+	buf.WriteString("  4. Adds the default components definition for the selected installation type.\n")
+	buf.WriteString("  5. Writes the generated krateo.yaml to disk.\n\n")
+	buf.WriteString("WHEN TO USE IT:\n\n")
+	buf.WriteString("  Use this command when you want a simple, manual migration.\n")
+	buf.WriteString("  It does not apply the new configuration and it does not modify the running installer.\n")
+	buf.WriteString("  After generating krateo.yaml, you review it, then run install plan/apply yourself.\n\n")
+	buf.WriteString("WHEN NOT TO USE IT:\n\n")
+	buf.WriteString("  If you want the migration workflow to continue automatically, use\n")
+	buf.WriteString("  krateoctl install migrate-full instead.\n\n")
+	buf.WriteString("EXAMPLES:\n\n")
+	buf.WriteString("  # Generate krateo.yaml from the default legacy resource\n")
+	buf.WriteString("  krateoctl install migrate\n\n")
+	buf.WriteString("  # Generate a file for a specific installation type\n")
+	buf.WriteString("  krateoctl install migrate --type ingress --output ./krateo.yaml\n\n")
+	buf.WriteString("  # Generate the file, then review and apply it manually\n")
+	buf.WriteString("  krateoctl install migrate --type nodeport\n")
+	buf.WriteString("  krateoctl install plan --config ./krateo.yaml --type nodeport\n")
+	buf.WriteString("  krateoctl install apply --config ./krateo.yaml --type nodeport\n")
 
 	return buf.String()
 }

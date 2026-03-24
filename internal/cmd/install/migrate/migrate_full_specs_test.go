@@ -33,8 +33,8 @@ func TestMigrateFullSpecsCommand(t *testing.T) {
 				t.Errorf("namespace = %q, want %q", cmd.namespace, "krateo-system")
 			}
 
-			if cmd.outputPath != "krateo.yaml" {
-				t.Errorf("outputPath = %q, want %q", cmd.outputPath, "krateo.yaml")
+			if cmd.outputPath != "" {
+				t.Errorf("outputPath = %q, want empty string", cmd.outputPath)
 			}
 
 			if cmd.installerNamespace == "" {
@@ -72,6 +72,9 @@ func TestMigrateFullSpecsCmd_Usage(t *testing.T) {
 	}
 	if !containsSubstring(usage, "--output") {
 		t.Errorf("Usage missing --output flag")
+	}
+	if !containsSubstring(usage, "optional path") {
+		t.Errorf("Usage should describe --output as optional")
 	}
 	if !containsSubstring(usage, "--installer-namespace") {
 		t.Errorf("Usage missing --installer-namespace flag")
@@ -127,6 +130,15 @@ func TestMigrateFullSpecsCmd_NamespaceDefault(t *testing.T) {
 
 	if cmd.installerNamespace != cmd.namespace {
 		t.Errorf("installerNamespace should default to namespace")
+	}
+}
+
+func TestMigrateFullSpecsCmd_OutputIsOptional(t *testing.T) {
+	cmd := &migrateFullSpecsCmd{}
+	cmd.ensureDeps()
+
+	if cmd.outputPath != "" {
+		t.Errorf("outputPath = %q, want empty string", cmd.outputPath)
 	}
 }
 

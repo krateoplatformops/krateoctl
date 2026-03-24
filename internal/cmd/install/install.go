@@ -20,7 +20,7 @@ func Command() subcommands.Command {
 type installCmd struct{}
 
 func (c *installCmd) Name() string     { return "install" }
-func (c *installCmd) Synopsis() string { return "installation workflows (plan/apply)" }
+func (c *installCmd) Synopsis() string { return "installation and migration workflows" }
 
 func (c *installCmd) Usage() string {
 	w := &bytes.Buffer{}
@@ -30,8 +30,8 @@ func (c *installCmd) Usage() string {
 	fmt.Fprint(w, "SUBCOMMANDS:\n\n")
 	fmt.Fprint(w, "  plan                  preview configuration changes\n")
 	fmt.Fprint(w, "  apply                 apply configuration changes to cluster\n")
-	fmt.Fprint(w, "  migrate               convert legacy KrateoPlatformOps CRs to krateo.yaml\n")
-	fmt.Fprint(w, "  migrate-full    fully migrate legacy KrateoPlatformOps (automated)\n")
+	fmt.Fprint(w, "  migrate               convert legacy KrateoPlatformOps to krateo.yaml (manual migration)\n")
+	fmt.Fprint(w, "  migrate-full          convert and switch over automatically (full migration)\n")
 	return w.String()
 }
 

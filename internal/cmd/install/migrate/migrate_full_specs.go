@@ -81,7 +81,7 @@ type migrateFullSpecsCmd struct {
 func (c *migrateFullSpecsCmd) Name() string { return "migrate-full" }
 
 func (c *migrateFullSpecsCmd) Synopsis() string {
-	return "fully migrate a legacy KrateoPlatformOps resource to new format (automated workflow)"
+	return "fully migrate a legacy KrateoPlatformOps resource with automatic cutover"
 }
 
 func (c *migrateFullSpecsCmd) Usage() string {
@@ -92,13 +92,36 @@ func (c *migrateFullSpecsCmd) Usage() string {
 	buf.WriteString("FLAGS:\n\n")
 	fmt.Fprintf(buf, "  --namespace string\n        namespace that contains the KrateoPlatformOps resource (default \"%s\")\n", shared.DefaultNamespace)
 	buf.WriteString("  --name string\n        name of the KrateoPlatformOps resource (default \"krateo\")\n")
-	fmt.Fprintf(buf, "  --output string\n        path to write the generated krateo.yaml (default \"%s\")\n", shared.DefaultConfigPath)
+	buf.WriteString("  --output string\n        optional path to save the generated krateo.yaml before applying it\n")
 	buf.WriteString("  --type string\n        installation type: nodeport, loadbalancer, or ingress (default \"nodeport\")\n")
 	buf.WriteString("  --installer-namespace string\n        namespace where the installer is deployed (default: same as --namespace)\n")
 	buf.WriteString("  --installer-release string\n        Helm release name for the installer (default \"installer\")\n")
 	buf.WriteString("  --installer-crd-release string\n        Helm release name for the installer CRD (default \"installer-crd\")\n")
 	buf.WriteString("  --force\n        overwrite the output file if it already exists\n")
-	buf.WriteString("  --debug\n        enable debug-level logging (can also use KRATEOCTL_DEBUG env var)\n")
+	buf.WriteString("  --debug\n        enable debug-level logging (can also use KRATEOCTL_DEBUG env var)\n\n")
+	buf.WriteString("PREREQUISITES:\n\n")
+	buf.WriteString("  Use this command only for Krateo 2.7.0 installations managed by the installer controller.\n\n")
+	buf.WriteString("WHAT THIS COMMAND DOES:\n\n")
+	buf.WriteString("  1. Reads the legacy KrateoPlatformOps resource from the cluster.\n")
+	buf.WriteString("  2. Converts it into a new krateo.yaml file.\n")
+	buf.WriteString("     If --output is set, the file is also saved to disk.\n")
+	buf.WriteString("  3. Scales the old installer down.\n")
+	buf.WriteString("  4. Applies the new krateo.yaml configuration automatically.\n")
+	buf.WriteString("  5. Deletes the old KrateoPlatformOps resource.\n")
+	buf.WriteString("  6. Uninstalls the old installer Helm releases.\n\n")
+	buf.WriteString("WHEN TO USE IT:\n\n")
+	buf.WriteString("  Use this command when you want the full migration to be handled automatically.\n")
+	buf.WriteString("  It performs the cutover steps for you after generating krateo.yaml.\n\n")
+	buf.WriteString("WHEN TO USE SIMPLE MIGRATE INSTEAD:\n\n")
+	buf.WriteString("  Use krateoctl install migrate when you want to generate the file first, review it,\n")
+	buf.WriteString("  and run plan/apply manually in separate steps.\n\n")
+	buf.WriteString("EXAMPLES:\n\n")
+	buf.WriteString("  # Run the full automatic migration\n")
+	buf.WriteString("  krateoctl install migrate-full --type nodeport\n\n")
+	buf.WriteString("  # Run the full automatic migration and also save the generated file\n")
+	buf.WriteString("  krateoctl install migrate-full --type nodeport --output ./krateo.yaml\n\n")
+	buf.WriteString("  # Run the full migration when installer releases use custom names\n")
+	buf.WriteString("  krateoctl install migrate-full --type ingress --installer-release my-installer --installer-crd-release my-installer-crd\n")
 
 	return buf.String()
 }
@@ -106,7 +129,7 @@ func (c *migrateFullSpecsCmd) Usage() string {
 func (c *migrateFullSpecsCmd) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.namespace, "namespace", shared.DefaultNamespace, "namespace that contains the KrateoPlatformOps resource")
 	f.StringVar(&c.name, "name", "krateo", "name of the KrateoPlatformOps resource")
-	f.StringVar(&c.outputPath, "output", shared.DefaultConfigPath, "path to write the generated krateo.yaml")
+	f.StringVar(&c.outputPath, "output", "", "optional path to save the generated krateo.yaml")
 	f.StringVar(&c.installType, "type", "nodeport", "installation type: nodeport, loadbalancer, or ingress")
 	f.StringVar(&c.installerNamespace, "installer-namespace", "", "namespace where the installer is deployed")
 	f.StringVar(&c.installerRelease, "installer-release", "installer", "Helm release name for the installer")
@@ -116,9 +139,6 @@ func (c *migrateFullSpecsCmd) SetFlags(f *flag.FlagSet) {
 }
 
 func (c *migrateFullSpecsCmd) ensureDeps() {
-	if c.outputPath == "" {
-		c.outputPath = shared.DefaultConfigPath
-	}
 	if c.restConfigFn == nil {
 		c.restConfigFn = kube.RestConfig
 	}
@@ -213,16 +233,20 @@ func (c *migrateFullSpecsCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ..
 		return subcommands.ExitFailure
 	}
 
-	if err := writeOutputFile(writeOutputOptions{
-		outputPath: c.outputPath,
-		force:      c.force,
-		writeFile:  c.writeFile,
-		data:       data,
-	}); err != nil {
-		logger.Error("Failed to write %s: %v", c.outputPath, err)
-		return subcommands.ExitFailure
+	if c.outputPath != "" {
+		if err := writeOutputFile(writeOutputOptions{
+			outputPath: c.outputPath,
+			force:      c.force,
+			writeFile:  c.writeFile,
+			data:       data,
+		}); err != nil {
+			logger.Error("Failed to write %s: %v", c.outputPath, err)
+			return subcommands.ExitFailure
+		}
+		logger.Info("✓ Generated new configuration: %s", c.outputPath)
+	} else {
+		logger.Info("✓ Generated new configuration in memory")
 	}
-	logger.Info("✓ Generated new configuration: %s", c.outputPath)
 
 	// Step 3: Scale installer to 0
 	logger.Info("Step 3/6: Scaling installer to 0...")
@@ -241,11 +265,17 @@ func (c *migrateFullSpecsCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ..
 		return subcommands.ExitFailure
 	}
 
-	// Load and validate config
-	result, err := shared.LoadConfigAndSteps(shared.NewLoadOptions(shared.LoadOptionsInput{
-		ConfigFile:       c.outputPath,
-		InstallationType: c.installType,
-	}), logger.Debug, false)
+	var raw map[string]any
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		logger.Error("Failed to parse generated configuration: %v", err)
+		return subcommands.ExitFailure
+	}
+	if raw == nil {
+		raw = make(map[string]any)
+	}
+
+	// Load and validate the generated config directly from memory.
+	result, err := shared.BuildLoadResult(raw, logger.Debug, false)
 	if err != nil {
 		logger.Error("Failed to load generated configuration: %v", err)
 		return subcommands.ExitFailure
