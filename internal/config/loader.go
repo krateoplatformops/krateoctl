@@ -22,6 +22,9 @@ type LoadOptions struct {
 	Repository string
 	// Version is the git tag/version to fetch from the repository (remote mode)
 	Version string
+	// InstallationType is the deployment type (nodeport, loadbalancer, ingress)
+	// Used to select type-specific config files
+	InstallationType string
 }
 
 // Loader handles loading configuration from files.
@@ -43,9 +46,10 @@ func (l *Loader) Load() (map[string]any, error) {
 	}
 
 	// Local mode: Load main config file from filesystem
-	config, err := l.loadFile(l.opts.ConfigPath)
+	// Try type-specific file first (e.g., krateo.nodeport.yaml), then fallback to generic krateo.yaml
+	config, err := l.loadConfigWithType(l.opts.ConfigPath, l.opts.InstallationType)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load config from %s: %w", l.opts.ConfigPath, err)
+		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
 	// If no overrides path is configured, we're done.
@@ -164,7 +168,8 @@ func (l *Loader) loadRemote() (map[string]any, error) {
 	}
 
 	// Fetch the main config file from the remote repository
-	config, err := l.loadRemoteFile(repo, l.opts.Version, "krateo.yaml")
+	// Try type-specific file first (e.g., krateo.nodeport.yaml), then fallback to generic krateo.yaml
+	config, err := l.loadRemoteConfigWithType(repo, l.opts.Version, l.opts.InstallationType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config from %s@%s: %w", repo, l.opts.Version, err)
 	}
@@ -290,6 +295,59 @@ func (l *Loader) loadRemoteFile(repo, version, filename string) (map[string]any,
 	}
 
 	return data, nil
+}
+
+// loadConfigWithType attempts to load type-specific config file first, then falls back to generic krateo.yaml
+// For example, if installType is "nodeport", it tries krateo.nodeport.yaml first, then krateo.yaml
+func (l *Loader) loadConfigWithType(basePath string, installType string) (map[string]any, error) {
+	if basePath == "" {
+		return make(map[string]any), nil
+	}
+
+	// Try type-specific file first
+	if installType != "" && installType != "nodeport" {
+		typeSpecificPath := strings.TrimSuffix(basePath, filepath.Ext(basePath)) + "." + installType + filepath.Ext(basePath)
+		if data, err := l.loadFile(typeSpecificPath); err == nil {
+			return data, nil
+		}
+		// Fall through to generic file if type-specific doesn't exist
+	}
+
+	// For nodeport, also try .kind.yaml variant
+	if installType == "nodeport" {
+		kindPath := strings.TrimSuffix(basePath, filepath.Ext(basePath)) + ".kind" + filepath.Ext(basePath)
+		if data, err := l.loadFile(kindPath); err == nil {
+			return data, nil
+		}
+		// Fall through to generic file
+	}
+
+	// Fallback to generic krateo.yaml
+	return l.loadFile(basePath)
+}
+
+// loadRemoteConfigWithType attempts to fetch type-specific config file first, then falls back to generic krateo.yaml
+func (l *Loader) loadRemoteConfigWithType(repo, version, installType string) (map[string]any, error) {
+	// Try type-specific file first
+	if installType != "" && installType != "nodeport" {
+		filename := "krateo." + installType + ".yaml"
+		if data, err := l.loadRemoteFile(repo, version, filename); err == nil {
+			return data, nil
+		}
+		// Fall through to generic file if type-specific doesn't exist
+	}
+
+	// For nodeport, also try .kind.yaml variant
+	if installType == "nodeport" {
+		filename := "krateo.kind.yaml"
+		if data, err := l.loadRemoteFile(repo, version, filename); err == nil {
+			return data, nil
+		}
+		// Fall through to generic file
+	}
+
+	// Fallback to generic krateo.yaml
+	return l.loadRemoteFile(repo, version, "krateo.yaml")
 }
 
 // loadFile reads and parses a YAML file into a map.

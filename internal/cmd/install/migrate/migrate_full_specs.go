@@ -243,7 +243,8 @@ func (c *migrateFullSpecsCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ..
 
 	// Load and validate config
 	result, err := shared.LoadConfigAndSteps(shared.NewLoadOptions(shared.LoadOptionsInput{
-		ConfigFile: c.outputPath,
+		ConfigFile:       c.outputPath,
+		InstallationType: c.installType,
 	}), logger.Debug, false)
 	if err != nil {
 		logger.Error("Failed to load generated configuration: %v", err)

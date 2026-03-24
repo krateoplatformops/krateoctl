@@ -22,10 +22,11 @@ func NewLogger(writer io.Writer, debug bool) *ui.Logger {
 }
 
 type LoadOptionsInput struct {
-	ConfigFile string
-	Profile    string
-	Version    string
-	Repository string
+	ConfigFile       string
+	Profile          string
+	Version          string
+	Repository       string
+	InstallationType string
 }
 
 func NewLoadOptions(input LoadOptionsInput) config.LoadOptions {
@@ -35,6 +36,7 @@ func NewLoadOptions(input LoadOptionsInput) config.LoadOptions {
 		Profile:           input.Profile,
 		Version:           input.Version,
 		Repository:        input.Repository,
+		InstallationType:  input.InstallationType,
 	}
 }
 

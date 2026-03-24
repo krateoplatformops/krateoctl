@@ -162,10 +162,11 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 
 	// 2. Load Configuration
 	result, err := shared.LoadConfigAndSteps(shared.NewLoadOptions(shared.LoadOptionsInput{
-		ConfigFile: c.configFile,
-		Profile:    c.profile,
-		Version:    c.version,
-		Repository: c.repository,
+		ConfigFile:       c.configFile,
+		Profile:          c.profile,
+		Version:          c.version,
+		Repository:       c.repository,
+		InstallationType: c.installType,
 	}), l.Info, c.skipValidation)
 	if err != nil {
 		l.Error("Failed to load configuration: %v", err)
@@ -209,12 +210,13 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 	}
 
 	if err := lifecycleManager.Apply(ctx, a, l, lifecycle.ApplyOptions{
-		Phase:         "pre-upgrade",
-		Version:       c.version,
-		Repository:    c.repository,
-		ConfigFile:    c.configFile,
-		RestConfig:    rc,
-		JobNameSuffix: jobNameSuffix,
+		Phase:            "pre-upgrade",
+		Version:          c.version,
+		Repository:       c.repository,
+		ConfigFile:       c.configFile,
+		RestConfig:       rc,
+		JobNameSuffix:    jobNameSuffix,
+		InstallationType: c.installType,
 	}); err != nil {
 		l.Error("Failed to apply pre-upgrade manifests: %v", err)
 		return subcommands.ExitFailure
@@ -265,12 +267,13 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 
 	// 6.5. Apply Post-Upgrade Manifests (if they exist)
 	if err := lifecycleManager.Apply(ctx, a, l, lifecycle.ApplyOptions{
-		Phase:         "post-upgrade",
-		Version:       c.version,
-		Repository:    c.repository,
-		ConfigFile:    c.configFile,
-		RestConfig:    rc,
-		JobNameSuffix: jobNameSuffix,
+		Phase:            "post-upgrade",
+		Version:          c.version,
+		Repository:       c.repository,
+		ConfigFile:       c.configFile,
+		RestConfig:       rc,
+		JobNameSuffix:    jobNameSuffix,
+		InstallationType: c.installType,
 	}); err != nil {
 		l.Error("Failed to apply post-upgrade manifests: %v", err)
 		return subcommands.ExitFailure

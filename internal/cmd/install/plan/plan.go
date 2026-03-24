@@ -134,10 +134,11 @@ func (c *planCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{
 	l := shared.NewLogger(os.Stderr, c.debug || os.Getenv(shared.KRATEOCTL_DEBUG_ENV) != "")
 
 	result, err := shared.LoadConfigAndSteps(shared.NewLoadOptions(shared.LoadOptionsInput{
-		ConfigFile: c.configFile,
-		Profile:    c.profile,
-		Version:    c.version,
-		Repository: c.repository,
+		ConfigFile:       c.configFile,
+		Profile:          c.profile,
+		Version:          c.version,
+		Repository:       c.repository,
+		InstallationType: c.installType,
 	}), l.Info, c.skipValidation)
 	if err != nil {
 		l.Error("Failed to load configuration: %v", err)
