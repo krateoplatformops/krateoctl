@@ -41,6 +41,7 @@ type ExecuteWorkflowOptions struct {
 	Result           *LoadResult
 	ProgressReporter workflows.StepNotifier
 	SaveState        bool
+	Version          string // Installation version (e.g., from --version flag or "local" for --config)
 }
 
 type ExecuteWorkflowResult struct {
@@ -50,7 +51,7 @@ type ExecuteWorkflowResult struct {
 }
 
 func ExecuteWorkflow(ctx context.Context, rc *rest.Config, opts ExecuteWorkflowOptions, deps WorkflowDeps) (*ExecuteWorkflowResult, error) {
-	snapshot, err := state.BuildSnapshot(opts.Result.Config, opts.Result.Steps)
+	snapshot, err := state.BuildSnapshot(opts.Result.Config, opts.Result.Steps, opts.Version)
 	if err != nil {
 		return nil, fmt.Errorf("build installation snapshot: %w", err)
 	}

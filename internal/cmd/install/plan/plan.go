@@ -158,7 +158,11 @@ func (c *planCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{
 		return subcommands.ExitSuccess
 	}
 
-	snapshot, err := state.BuildSnapshot(result.Config, steps)
+	version := c.version
+	if version == "" {
+		version = "local"
+	}
+	snapshot, err := state.BuildSnapshot(result.Config, steps, version)
 	if err != nil {
 		l.Error("Failed to build installation snapshot: %v", err)
 		return subcommands.ExitFailure
