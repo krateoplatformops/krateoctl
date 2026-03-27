@@ -237,6 +237,10 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 	spin.Start()
 
 	// Use the shared workflow executor for the core apply path.
+	version := c.version
+	if version == "" {
+		version = "local"
+	}
 	execResult, err := shared.ExecuteWorkflow(ctx, rc, shared.ExecuteWorkflowOptions{
 		Namespace:        c.namespace,
 		StateName:        c.stateName,
@@ -244,6 +248,7 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 		Result:           result,
 		ProgressReporter: c.createProgressReporter(spin, l, len(result.Steps)),
 		SaveState:        false,
+		Version:          version,
 	}, shared.WorkflowDeps{
 		GetterFactory:  shared.GetterFactory(c.getterFactory),
 		ApplierFactory: shared.ApplierFactory(c.applierFactory),

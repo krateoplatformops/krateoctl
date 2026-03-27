@@ -33,6 +33,7 @@ var installationGVR = schema.GroupVersionResource{
 type Snapshot struct {
 	ComponentsDefinition map[string]any   `json:"componentsDefinition,omitempty" yaml:"componentsDefinition,omitempty"`
 	Steps                []map[string]any `json:"steps,omitempty" yaml:"steps,omitempty"`
+	InstallationVersion  string           `json:"installationVersion,omitempty" yaml:"installationVersion,omitempty"`
 }
 
 // Installation is the CR representation persisted to the cluster.
@@ -78,15 +79,21 @@ func (m *manager) Save(ctx context.Context, name string, snapshot *Snapshot) err
 		return fmt.Errorf("installation snapshot is nil")
 	}
 
+	annotations := make(map[string]string)
+	if snapshot.InstallationVersion != "" {
+		annotations["krateo.io/installation-version"] = snapshot.InstallationVersion
+	}
+
 	inst := &Installation{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Installation",
 			APIVersion: "krateo.io/v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:       name,
-			Namespace:  m.namespace,
-			Finalizers: []string{InstallationFinalizer},
+			Name:        name,
+			Namespace:   m.namespace,
+			Finalizers:  []string{InstallationFinalizer},
+			Annotations: annotations,
 		},
 		Spec: InstallationSpec{Spec: *snapshot},
 	}
@@ -105,6 +112,7 @@ func (m *manager) Save(ctx context.Context, name string, snapshot *Snapshot) err
 	default:
 		inst.ObjectMeta.ResourceVersion = existing.GetResourceVersion()
 		inst.ObjectMeta.Finalizers = mergeFinalizers(existing.GetFinalizers(), inst.ObjectMeta.Finalizers)
+		inst.ObjectMeta.Annotations = mergeAnnotations(existing.GetAnnotations(), inst.ObjectMeta.Annotations)
 		u, convErr := installationToUnstructured(inst)
 		if convErr != nil {
 			return convErr
@@ -112,6 +120,25 @@ func (m *manager) Save(ctx context.Context, name string, snapshot *Snapshot) err
 		_, updateErr := m.resource().Update(ctx, u, metav1.UpdateOptions{})
 		return updateErr
 	}
+}
+
+func mergeAnnotations(existing, desired map[string]string) map[string]string {
+	if existing == nil {
+		existing = make(map[string]string)
+	}
+	if desired == nil {
+		desired = make(map[string]string)
+	}
+
+	result := make(map[string]string)
+	for k, v := range existing {
+		result[k] = v
+	}
+	for k, v := range desired {
+		result[k] = v
+	}
+
+	return result
 }
 
 func installationToUnstructured(inst *Installation) (*unstructured.Unstructured, error) {
@@ -169,8 +196,10 @@ func (m *manager) Load(ctx context.Context, name string) (*Snapshot, error) {
 }
 
 // BuildSnapshot converts the resolved config and steps into a Snapshot object suitable for persistence.
-func BuildSnapshot(cfg *config.Config, steps []*types.Step) (*Snapshot, error) {
-	snap := &Snapshot{}
+func BuildSnapshot(cfg *config.Config, steps []*types.Step, version string) (*Snapshot, error) {
+	snap := &Snapshot{
+		InstallationVersion: version,
+	}
 
 	if cfg != nil {
 		if doc := cfg.Document(); doc != nil {

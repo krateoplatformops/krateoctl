@@ -19,6 +19,9 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
+    - jsonPath: .metadata.annotations['krateo\.io/installation-version']
+      name: VERSION
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: AGE
       type: date
@@ -50,6 +53,9 @@ spec:
                   componentsDefinition:
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
+                  installationVersion:
+                    type: string
+                    description: "Version of the Krateo installation (specified via --version or 'local' if using local config)"
                   steps:
                     items:
                       type: object

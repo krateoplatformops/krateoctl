@@ -299,6 +299,7 @@ func (c *migrateFullSpecsCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ..
 				logger.Debug("Processing step %d/%d: %s (%s)", idx+1, len(result.Steps), step.ID, status)
 			},
 			SaveState: false,
+			Version:   "local", // Migration always uses local specification
 		}, shared.WorkflowDeps{
 			GetterFactory:  shared.GetterFactory(c.getterFactory),
 			ApplierFactory: shared.ApplierFactory(c.applierFactory),
