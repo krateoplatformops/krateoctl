@@ -5,10 +5,16 @@
 - `plan` previews what `krateoctl` would do, without talking to the cluster.
 - `apply` executes the workflow against the cluster.
 
+> **Secrets must be managed separately.**
+> `krateoctl` does not bootstrap production secrets. Use Vault or create the required Kubernetes Secrets manually before running install or upgrade commands.
+>
+> See the [Secrets Spec](secrets.md) for the required names, keys, and namespace rules.
+
 ## Table Of Contents
 
 - [Release Source](#release-source)
 - [Installation Snapshot](#installation-snapshot)
+- [Secrets](#secrets)
 - [Plan Command](#plan-command)
 - [Apply Command](#apply-command)
 - [Upgrade Flow](#upgrade-flow)
