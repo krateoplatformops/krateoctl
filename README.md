@@ -1,5 +1,6 @@
 # `krateoctl`
 
+`krateoctl` is the CLI for Krateo installation workflows and version-aware composition operations.
 
 ## Installation
 
@@ -28,4 +29,8 @@ For Windows or if you prefer manual installation:
 - Extract the binary.
 - Add the extracted binary to your system's PATH.
 
+## Command Docs
+
+- [Installation migration](docs/installation-migration.md)
+- [Get compositions](docs/get-compositions.md)
 
