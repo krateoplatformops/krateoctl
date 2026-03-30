@@ -5,7 +5,8 @@
 - `plan` previews what `krateoctl` would do, without talking to the cluster.
 - `apply` executes the workflow against the cluster.
 
-> **Secrets must be managed separately.**
+> [!IMPORTANT]
+> Secrets must be managed separately.
 > `krateoctl` does not bootstrap production secrets. Use Vault or create the required Kubernetes Secrets manually before running install or upgrade commands.
 >
 > See the [Secrets Spec](secrets.md) for the required names, keys, and namespace rules.
