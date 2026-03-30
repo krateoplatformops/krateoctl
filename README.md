@@ -1,6 +1,6 @@
 # `krateoctl`
 
-`krateoctl` is the CLI for Krateo installation workflows and version-aware composition operations.
+`krateoctl` is the CLI for Krateo install, upgrade, migration, and version-aware composition operations.
 
 ## Installation
 
@@ -31,6 +31,6 @@ For Windows or if you prefer manual installation:
 
 ## Command Docs
 
+- [Install and upgrade](docs/install-upgrade.md)
 - [Installation migration](docs/installation-migration.md)
 - [Get compositions](docs/get-compositions.md)
-

@@ -7,6 +7,8 @@
 
 Both commands are designed for Krateo 2.7.0 installations managed by the installer controller.
 
+If you are looking for the regular install or upgrade workflow, see [Install and Upgrade](install-upgrade.md).
+
 ## Which Command Should I Use?
 
 Use `migrate` when you want to:
@@ -56,6 +58,18 @@ krateoctl install migrate [FLAGS]
 3. Run `krateoctl install plan` to preview the new installation.
 4. Run `krateoctl install apply` when you are ready to switch over.
 5. Remove the old controller and legacy `KrateoPlatformOps` resource manually when the migration is complete.
+
+### Inspect the Snapshot
+
+After `install apply` or `migrate-full`, `krateoctl` stores the resolved installation snapshot as an `Installation` resource named `krateoctl` in the install namespace.
+
+You can inspect it with:
+
+```sh
+kubectl get installation krateoctl -n krateo-system -o yaml
+```
+
+This is the easiest way to review what was actually persisted after the installation or migration finished.
 
 ### Examples
 
