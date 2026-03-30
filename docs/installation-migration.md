@@ -24,6 +24,58 @@ Use `migrate-full` when you want `krateoctl` to:
 - remove the legacy `KrateoPlatformOps` resource
 - uninstall the old installer Helm releases
 
+## Automated Migration
+
+`krateoctl install migrate-full` performs the same conversion, then carries out the migration steps automatically.
+
+### Usage
+
+```sh
+krateoctl install migrate-full [FLAGS]
+```
+
+### Flags
+
+- `--type` installation type to use for the generated defaults: `nodeport`, `loadbalancer`, or `ingress`
+- `--namespace` namespace containing the legacy `KrateoPlatformOps` resource, default `krateo-system`
+- `--name` legacy resource name, default `krateo`
+- `--output` optional path to save the generated `krateo.yaml`
+- `--installer-namespace` namespace where the old installer is deployed, default the same as `--namespace`
+- `--installer-release` Helm release name for the installer chart, default `installer`
+- `--installer-crd-release` Helm release name for the installer CRD chart, default `installer-crd`
+- `--force` overwrite the output file if it already exists
+- `--debug` enable debug logging, or set `KRATEOCTL_DEBUG`
+
+### What It Does
+
+1. Reads the legacy `KrateoPlatformOps` resource from the cluster.
+2. Converts it into a new `krateo.yaml` document.
+3. Optionally writes the generated file to disk when `--output` is provided.
+4. Scales the old installer down.
+5. Applies the new configuration automatically.
+6. Deletes the legacy `KrateoPlatformOps` resource.
+7. Uninstalls the old installer Helm releases.
+
+### Examples
+
+```sh
+# Run the full automatic migration
+krateoctl install migrate-full --type nodeport
+```
+
+```sh
+# Run the full migration and also save the generated file
+krateoctl install migrate-full --type nodeport --output ./krateo.yaml
+```
+
+```sh
+# Run the migration with custom Helm release names
+krateoctl install migrate-full \
+  --type ingress \
+  --installer-release my-installer \
+  --installer-crd-release my-installer-crd
+```
+
 ## Manual Migration
 
 `krateoctl install migrate` reads a legacy `KrateoPlatformOps` resource from the cluster, converts it into the new configuration format, and writes the result to disk.
@@ -88,58 +140,6 @@ krateoctl install migrate --type ingress --output ./krateo.yaml
 krateoctl install migrate --type nodeport
 krateoctl install plan --config ./krateo.yaml --type nodeport
 krateoctl install apply --config ./krateo.yaml --type nodeport
-```
-
-## Automated Migration
-
-`krateoctl install migrate-full` performs the same conversion, then carries out the migration steps automatically.
-
-### Usage
-
-```sh
-krateoctl install migrate-full [FLAGS]
-```
-
-### Flags
-
-- `--type` installation type to use for the generated defaults: `nodeport`, `loadbalancer`, or `ingress`
-- `--namespace` namespace containing the legacy `KrateoPlatformOps` resource, default `krateo-system`
-- `--name` legacy resource name, default `krateo`
-- `--output` optional path to save the generated `krateo.yaml`
-- `--installer-namespace` namespace where the old installer is deployed, default the same as `--namespace`
-- `--installer-release` Helm release name for the installer chart, default `installer`
-- `--installer-crd-release` Helm release name for the installer CRD chart, default `installer-crd`
-- `--force` overwrite the output file if it already exists
-- `--debug` enable debug logging, or set `KRATEOCTL_DEBUG`
-
-### What It Does
-
-1. Reads the legacy `KrateoPlatformOps` resource from the cluster.
-2. Converts it into a new `krateo.yaml` document.
-3. Optionally writes the generated file to disk when `--output` is provided.
-4. Scales the old installer down.
-5. Applies the new configuration automatically.
-6. Deletes the legacy `KrateoPlatformOps` resource.
-7. Uninstalls the old installer Helm releases.
-
-### Examples
-
-```sh
-# Run the full automatic migration
-krateoctl install migrate-full --type nodeport
-```
-
-```sh
-# Run the full migration and also save the generated file
-krateoctl install migrate-full --type nodeport --output ./krateo.yaml
-```
-
-```sh
-# Run the migration with custom Helm release names
-krateoctl install migrate-full \
-  --type ingress \
-  --installer-release my-installer \
-  --installer-crd-release my-installer-crd
 ```
 
 ## Notes

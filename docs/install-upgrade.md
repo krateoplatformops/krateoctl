@@ -12,7 +12,7 @@ Use these commands when you want to:
 - install Krateo from a local `krateo.yaml`
 - upgrade to a tagged release version
 - compare the computed plan with the last stored installation snapshot
-- run type-specific workflows for `kind`, `nodeport`, `loadbalancer`, or `ingress`
+- run type-specific workflows for `nodeport`, `loadbalancer`, or `ingress`
 
 ## Release Source
 
@@ -83,7 +83,7 @@ krateoctl install plan [FLAGS]
 - `--config` local configuration file, default `krateo.yaml`
 - `--profile` optional profile name, such as `dev` or `prod`
 - `--namespace` namespace where the installation snapshot is stored
-- `--type` file variant to use, such as `kind`, `nodeport`, `loadbalancer`, or `ingress`
+- `--type` file variant to use, such as `nodeport`, `loadbalancer`, or `ingress`
 - `--diff-installed` compare the computed plan against the stored installation snapshot
 - `--output` emit the computed plan as YAML to stdout
 - `--skip-validation` skip configuration validation
@@ -135,7 +135,7 @@ krateoctl install apply [FLAGS]
 - `--repository` custom GitHub repository URL for release assets, default `https://github.com/krateoplatformops/releases`
 - `--config` local configuration file, default `krateo.yaml`
 - `--namespace` target namespace
-- `--type` file variant to use, such as `kind`, `nodeport`, `loadbalancer`, or `ingress`
+- `--type` file variant to use, such as `nodeport`, `loadbalancer`, or `ingress`
 - `--profile` optional profile name
 - `--skip-validation` skip configuration validation
 - `--debug` enable debug logging, or set `KRATEOCTL_DEBUG`
@@ -185,4 +185,3 @@ For a normal upgrade, the recommended sequence is:
 
 - Local mode uses files from disk and is the right fit when you are developing or testing a config change.
 - Remote mode uses the releases repository and is the right fit when you are upgrading to an existing tagged release.
-- The `kind` variant is treated as a `nodeport`-style layout by the loader.
