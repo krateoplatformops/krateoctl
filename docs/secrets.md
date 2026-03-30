@@ -1,5 +1,10 @@
 # Secrets Spec
 
+> **Secrets are not bootstrapped by `krateoctl`.**
+> Manage them in Vault or create them manually before you run install or migration commands.
+>
+> Production installs should treat these secrets as user-managed inputs, not as something `krateoctl` generates for you.
+
 `krateoctl` expects installation secrets to be managed outside the normal install flow.
 
 Recommended approach:
@@ -7,7 +12,7 @@ Recommended approach:
 - store the secret material in Vault
 - sync the Vault data into Kubernetes with your preferred secret management tool
 
-Manual creation is also supported, but `krateoctl` does not document or rely on a bootstrap flag for it.
+Manual creation is also supported.
 
 ## Scope
 
