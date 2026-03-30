@@ -9,6 +9,8 @@ Both commands are designed for Krateo 2.7.0 installations managed by the install
 
 If you are looking for the regular install or upgrade workflow, see [Install and Upgrade](install-upgrade.md).
 
+Secrets are managed separately from the migration workflow. Use Vault or create the required Kubernetes Secrets manually, then follow the [Secrets Spec](secrets.md).
+
 ## Table Of Contents
 
 - [Which Command Should I Use?](#which-command-should-i-use)

@@ -75,6 +75,12 @@ The snapshot gives `krateoctl` a durable record of what was last computed and ap
 - The CRD is installed automatically by `krateoctl install apply` and the migration flow if it is missing.
 - If the snapshot is not present, `plan --diff-installed` reports that it could not find one and continues without a diff.
 
+## Secrets
+
+Secrets are managed separately from the install workflow. The recommended approach is to store them in Vault and sync them into Kubernetes.
+
+See the full [Secrets Spec](secrets.md) for the required names, keys, and namespace rules.
+
 ## Plan Command
 
 `krateoctl install plan` is the command that loads the configuration, computes the workflow, and prints the result as multi-document YAML or as a diff summary.
@@ -94,6 +100,7 @@ krateoctl install plan [FLAGS]
 - `--namespace` namespace where the installation snapshot is stored
 - `--type` file variant to use, such as `nodeport`, `loadbalancer`, or `ingress`
 - `--diff-installed` compare the computed plan against the stored installation snapshot
+- `--diff-format` choose how diffs are rendered; use `table` for a per-step summary view
 - `--output` emit the computed plan as YAML to stdout
 - `--skip-validation` skip configuration validation
 - `--debug` enable debug logging, or set `KRATEOCTL_DEBUG`
@@ -126,6 +133,11 @@ krateoctl install plan --version v1.0.0 --repository https://github.com/myorg/kr
 ```sh
 # Compare the plan against the stored snapshot
 krateoctl install plan --version v1.0.0 --diff-installed
+```
+
+```sh
+# Show a step-by-step diff summary in a table
+krateoctl install plan --diff-format table
 ```
 
 ## Apply Command

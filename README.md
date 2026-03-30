@@ -34,3 +34,4 @@ For Windows or if you prefer manual installation:
 - [Install and upgrade](docs/install-upgrade.md)
 - [Installation migration](docs/installation-migration.md)
 - [Get compositions](docs/get-compositions.md)
+- [Secrets spec](docs/secrets.md)
