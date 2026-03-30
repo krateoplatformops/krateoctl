@@ -2,6 +2,15 @@
 
 `krateoctl get compositions` lists or fetches composition resources with automatic version discovery across the CRDs in the `composition.krateo.io` group.
 
+## Table Of Contents
+
+- [What It Supports](#what-it-supports)
+- [Flags](#flags)
+- [How Lookup Works](#how-lookup-works)
+- [Defaults](#defaults)
+- [Examples](#examples)
+- [Output Notes](#output-notes)
+
 ## Usage
 
 ```sh

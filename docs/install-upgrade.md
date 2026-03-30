@@ -5,6 +5,15 @@
 - `plan` previews what `krateoctl` would do, without talking to the cluster.
 - `apply` executes the workflow against the cluster.
 
+## Table Of Contents
+
+- [Release Source](#release-source)
+- [Installation Snapshot](#installation-snapshot)
+- [Plan Command](#plan-command)
+- [Apply Command](#apply-command)
+- [Upgrade Flow](#upgrade-flow)
+- [Notes](#notes)
+
 ## When To Use Them
 
 Use these commands when you want to:
@@ -66,9 +75,9 @@ The snapshot gives `krateoctl` a durable record of what was last computed and ap
 - The CRD is installed automatically by `krateoctl install apply` and the migration flow if it is missing.
 - If the snapshot is not present, `plan --diff-installed` reports that it could not find one and continues without a diff.
 
-## Plan
+## Plan Command
 
-`krateoctl install plan` loads the configuration, computes the workflow, and prints the result as multi-document YAML or as a diff summary.
+`krateoctl install plan` is the command that loads the configuration, computes the workflow, and prints the result as multi-document YAML or as a diff summary.
 
 ### Usage
 
@@ -119,9 +128,9 @@ krateoctl install plan --version v1.0.0 --repository https://github.com/myorg/kr
 krateoctl install plan --version v1.0.0 --diff-installed
 ```
 
-## Apply
+## Apply Command
 
-`krateoctl install apply` executes the computed workflow against the cluster.
+`krateoctl install apply` is the command that executes the computed workflow against the cluster.
 
 ### Usage
 
@@ -175,11 +184,12 @@ krateoctl install apply --config ./krateo.yaml --type ingress
 
 For a normal upgrade, the recommended sequence is:
 
-1. Run `krateoctl install plan --version <tag>` and review the output.
-2. If the diff looks correct, run `krateoctl install apply --version <tag>`.
-3. Keep `--repository` pointed at `https://github.com/krateoplatformops/releases` unless you mirror the release assets elsewhere.
-4. Use `--type` to match the target environment layout, such as `nodeport`, `loadbalancer`, or `ingress`.
-5. Use `--diff-installed` when you want to compare the computed plan against the stored snapshot before applying.
+1. Run `krateoctl install plan --version <tag> --diff-installed` to compare the target release with the stored installation snapshot.
+2. Review the diff and confirm the upgrade path looks correct.
+3. Run `krateoctl install apply --version <tag>` to perform the upgrade.
+4. Keep `--repository` pointed at `https://github.com/krateoplatformops/releases` unless you mirror the release assets elsewhere.
+5. Use `--type` to match the target environment layout, such as `nodeport`, `loadbalancer`, or `ingress`.
+6. Use `--diff-installed` when you want to compare the computed plan against the stored snapshot before applying.
 
 ## Notes
 

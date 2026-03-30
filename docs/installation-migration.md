@@ -9,6 +9,14 @@ Both commands are designed for Krateo 2.7.0 installations managed by the install
 
 If you are looking for the regular install or upgrade workflow, see [Install and Upgrade](install-upgrade.md).
 
+## Table Of Contents
+
+- [Which Command Should I Use?](#which-command-should-i-use)
+- [Automated Migration](#automated-migration)
+- [Manual Migration](#manual-migration)
+- [Inspect the Snapshot](#inspect-the-snapshot)
+- [Notes](#notes)
+
 ## Which Command Should I Use?
 
 Use `migrate` when you want to:
