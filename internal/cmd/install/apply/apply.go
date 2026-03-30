@@ -51,7 +51,7 @@ type applyCmd struct {
 	repository     string
 	installType    string
 	debug          bool
-	initSecrets    bool // Hidden utility flag for generating sample secrets
+	initSecrets    bool // Dev-only hidden flag for generating sample secrets
 	skipValidation bool // Skip configuration validation
 
 	restConfigFn    restConfigProvider
@@ -198,7 +198,7 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 		return subcommands.ExitFailure
 	}
 
-	// Initialize sample secrets if requested (hidden utility feature)
+	// Initialize sample secrets if requested (dev-only hidden feature)
 	if c.initSecrets {
 		l.Info("\n🔐 Initializing sample secrets...")
 		if err := secrets.InitializeSecrets(ctx, rc, c.namespace); err != nil {

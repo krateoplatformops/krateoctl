@@ -1,8 +1,10 @@
 package plan
 
 import (
+	"bytes"
 	"context"
 	"flag"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -51,6 +53,40 @@ func TestPlanExecute(t *testing.T) {
 	}
 }
 
+func TestPlanExecuteTableDiff(t *testing.T) {
+	configPath := writeTestConfig(t, `componentsDefinition:
+  demo:
+    steps:
+      - step-one
+components:
+  demo:
+    enabled: false
+steps:
+  - id: step-one
+    type: chart
+    with:
+      releaseName: demo
+`)
+
+	cmd := &planCmd{
+		configFile: configPath,
+		diffFormat: "table",
+	}
+
+	stderr := captureStderr(t, func() {
+		status := cmd.Execute(context.Background(), flag.NewFlagSet("plan", flag.ContinueOnError))
+		if status != subcommands.ExitSuccess {
+			t.Fatalf("Execute() = %v, want %v", status, subcommands.ExitSuccess)
+		}
+	})
+
+	for _, want := range []string{"STEP", "CHANGE", "SUMMARY", "modified", "step-one", "skip enabled"} {
+		if !bytes.Contains([]byte(stderr), []byte(want)) {
+			t.Fatalf("table diff output missing %q:\n%s", want, stderr)
+		}
+	}
+}
+
 func writeTestConfig(t *testing.T, data string) string {
 	t.Helper()
 
@@ -61,4 +97,34 @@ func writeTestConfig(t *testing.T, data string) string {
 	}
 
 	return path
+}
+
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+
+	oldStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create pipe: %v", err)
+	}
+
+	os.Stderr = w
+	done := make(chan string, 1)
+	go func() {
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		done <- buf.String()
+	}()
+
+	defer func() {
+		os.Stderr = oldStderr
+	}()
+
+	fn()
+
+	_ = w.Close()
+	output := <-done
+	_ = r.Close()
+
+	return output
 }

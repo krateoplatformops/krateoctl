@@ -9,7 +9,6 @@ import (
 	"os"
 
 	"github.com/krateoplatformops/krateoctl/internal/cmd/install/shared"
-	"github.com/krateoplatformops/krateoctl/internal/diff"
 	"github.com/krateoplatformops/krateoctl/internal/install/state"
 	"github.com/krateoplatformops/krateoctl/internal/subcommands"
 	"github.com/krateoplatformops/krateoctl/internal/util/kube"
@@ -31,6 +30,7 @@ type planCmd struct {
 	namespace      string
 	installType    string
 	diffInstalled  bool
+	diffFormat     string
 	output         bool
 	version        string
 	repository     string
@@ -66,6 +66,9 @@ func (c *planCmd) Usage() string {
 	fmt.Fprint(&wri, "        choose which file variant to use. Supported values: nodeport, loadbalancer, ingress. For example, nodeport looks for krateo.nodeport.yaml and files like pre-upgrade.nodeport.yaml. (default \"nodeport\")\n")
 	fmt.Fprint(&wri, "  --diff-installed\n")
 	fmt.Fprint(&wri, "        compare computed plan against the stored installation snapshot\n")
+	fmt.Fprint(&wri, "  --diff-format string\n")
+	fmt.Fprint(&wri, "        choose how diffs are rendered: unified (default) or table\n")
+	fmt.Fprint(&wri, "        table shows a step-by-step summary for the compared plan\n")
 	fmt.Fprint(&wri, "  --output\n")
 	fmt.Fprint(&wri, "        output computed plan steps as multi-document YAML to stdout\n")
 	fmt.Fprint(&wri, "  --skip-validation\n")
@@ -115,6 +118,7 @@ func (c *planCmd) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.namespace, "namespace", shared.DefaultNamespace, "kubernetes namespace where the installation snapshot is stored")
 	f.StringVar(&c.installType, "type", "nodeport", "choose which file variant to use: nodeport, loadbalancer, or ingress")
 	f.BoolVar(&c.diffInstalled, "diff-installed", false, "compare the computed plan with the stored installation snapshot")
+	f.StringVar(&c.diffFormat, "diff-format", "unified", "diff rendering mode: unified or table")
 	f.BoolVar(&c.output, "output", false, "output computed plan steps as multi-document YAML")
 	f.BoolVar(&c.skipValidation, "skip-validation", false, "skip configuration validation")
 	f.BoolVar(&c.debug, "debug", false, "enable debug-level logging")
@@ -165,10 +169,6 @@ func (c *planCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{
 		l.Error("Failed to build installation snapshot: %v", err)
 		return subcommands.ExitFailure
 	}
-
-	// Instead of the current pretty printer, emit multi‑doc YAML
-	enc := yaml.NewEncoder(os.Stdout)
-	defer enc.Close()
 
 	boriginalSteps, err := yaml.Marshal(result.OriginalSteps)
 	if err != nil {
@@ -233,20 +233,15 @@ func (c *planCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{
 					return subcommands.ExitFailure
 				}
 
-				delta := diff.Diff("installed", installedBytes, "plan", planBytes)
-				if len(delta) == 0 {
-					l.Info("✓ Computed plan matches stored snapshot %q", c.stateName)
-				} else {
-					l.Warn("⚠️  Differences vs stored snapshot %q in namespace %q:\n%s", c.stateName, c.namespace, diff.Colorize(delta))
+				if err := c.renderDiff(l, os.Stderr, "installed", installedBytes, "plan", planBytes, installed, snapshot); err != nil {
+					l.Error("%v", err)
+					return subcommands.ExitFailure
 				}
 			}
 		} else {
-			di := diff.Diff("original", boriginalSteps, "computed", bSteps)
-
-			if len(di) > 0 {
-				l.Warn("⚠️  Plan differs from original steps:\n%s", diff.Colorize(di))
-			} else {
-				l.Info("✓ Computed plan matches original steps")
+			if err := c.renderDiff(l, os.Stderr, "original", boriginalSteps, "computed", bSteps, result.OriginalSteps, steps); err != nil {
+				l.Error("%v", err)
+				return subcommands.ExitFailure
 			}
 		}
 	}
