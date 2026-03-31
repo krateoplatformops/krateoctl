@@ -51,7 +51,7 @@ type applyCmd struct {
 	repository     string
 	installType    string
 	debug          bool
-	initSecrets    bool // Hidden utility flag for generating sample secrets
+	initSecrets    bool // Dev-only hidden flag for generating sample secrets
 	skipValidation bool // Skip configuration validation
 
 	restConfigFn    restConfigProvider
@@ -110,7 +110,7 @@ func (c *applyCmd) Usage() string {
 	fmt.Fprint(&wri, "  --repository string   GitHub repository URL for releases (default \"https://github.com/krateoplatformops/releases\")\n")
 	fmt.Fprintf(&wri, "  --config string       path to local configuration file (default \"%s\", used when --version is not set)\n", shared.DefaultConfigPath)
 	fmt.Fprintf(&wri, "  --namespace string    target namespace (default \"%s\")\n", shared.DefaultNamespace)
-	fmt.Fprint(&wri, "  --type string         choose which file variant to use. Supported values: kind, nodeport, loadbalancer, ingress. For example, kind looks for krateo.kind.yaml and files like pre-upgrade.kind.yaml. nodeport looks for krateo.nodeport.yaml and files like pre-upgrade.nodeport.yaml. (default \"nodeport\")\n")
+	fmt.Fprint(&wri, "  --type string         choose which file variant to use. Supported values: nodeport, loadbalancer, ingress. For example, nodeport looks for krateo.nodeport.yaml and files like pre-upgrade.nodeport.yaml. (default \"nodeport\")\n")
 	fmt.Fprint(&wri, "  --profile string      optional profile name (e.g. dev, prod)\n")
 	fmt.Fprint(&wri, "  --skip-validation     skip configuration validation (useful for emergency recovery)\n")
 	fmt.Fprint(&wri, "  --debug               enable debug-level logging (can also use KRATEOCTL_DEBUG env var)\n\n")
@@ -143,7 +143,7 @@ func (c *applyCmd) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.repository, "repository", "", "GitHub repository URL for releases")
 	f.StringVar(&c.configFile, "config", shared.DefaultConfigPath, "path to local configuration file")
 	f.StringVar(&c.namespace, "namespace", shared.DefaultNamespace, "kubernetes namespace for deployment")
-	f.StringVar(&c.installType, "type", "nodeport", "choose which file variant to use: kind, nodeport, loadbalancer, or ingress")
+	f.StringVar(&c.installType, "type", "nodeport", "choose which file variant to use: nodeport, loadbalancer, or ingress")
 	f.StringVar(&c.profile, "profile", "", "optional profile name")
 	f.BoolVar(&c.skipValidation, "skip-validation", false, "skip configuration validation")
 	f.BoolVar(&c.debug, "debug", false, "enable debug-level logging")
@@ -198,7 +198,7 @@ func (c *applyCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface
 		return subcommands.ExitFailure
 	}
 
-	// Initialize sample secrets if requested (hidden utility feature)
+	// Initialize sample secrets if requested (dev-only hidden feature)
 	if c.initSecrets {
 		l.Info("\n🔐 Initializing sample secrets...")
 		if err := secrets.InitializeSecrets(ctx, rc, c.namespace); err != nil {
