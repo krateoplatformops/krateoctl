@@ -5,7 +5,7 @@ go 1.25.3
 require (
 	github.com/aquasecurity/table v1.11.0
 	github.com/itchyny/gojq v0.12.17
-	github.com/krateoplatformops/plumbing v1.7.0
+	github.com/krateoplatformops/plumbing v1.0.0
 	github.com/krateoplatformops/provider-runtime v0.10.2
 	github.com/magiconair/properties v1.8.10
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
