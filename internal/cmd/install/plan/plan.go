@@ -143,11 +143,12 @@ func (c *planCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{
 
 	result, err := shared.LoadConfigAndSteps(shared.NewLoadOptions(shared.LoadOptionsInput{
 		ConfigFile:       c.configFile,
+		Namespace:        c.namespace,
 		Profile:          c.profile,
 		Version:          c.version,
 		Repository:       c.repository,
 		InstallationType: c.installType,
-	}), l.Info, c.skipValidation)
+	}), c.namespace, l.Info, c.skipValidation)
 	if err != nil {
 		l.Error("Failed to load configuration: %v", err)
 		return subcommands.ExitFailure

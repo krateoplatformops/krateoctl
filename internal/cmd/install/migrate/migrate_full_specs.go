@@ -275,7 +275,7 @@ func (c *migrateFullSpecsCmd) Execute(ctx context.Context, _ *flag.FlagSet, _ ..
 	}
 
 	// Load and validate the generated config directly from memory.
-	result, err := shared.BuildLoadResult(raw, logger.Debug, false)
+	result, err := shared.BuildLoadResult(raw, c.namespace, logger.Debug, false)
 	if err != nil {
 		logger.Error("Failed to load generated configuration: %v", err)
 		return subcommands.ExitFailure

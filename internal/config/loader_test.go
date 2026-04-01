@@ -178,6 +178,62 @@ func TestLoaderLoadConfigWithTypeVariants(t *testing.T) {
 	}
 }
 
+func TestLoaderReplacesNamespaceTemplateBeforeYAMLParse(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "krateo.yaml")
+
+	writeTestFile(t, configPath, `
+componentsDefinition:
+  backend:
+    steps:
+      - extract-authn
+steps:
+  - id: extract-authn
+    type: var
+    with:
+      name: AUTHN_IP
+      valueFrom:
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: authn
+          namespace: {{ .Namespace }}
+        selector: .status.loadBalancer.ingress[0].ip
+  - id: install-deviser
+    type: chart
+    with:
+      releaseName: deviser
+      values:
+        config:
+          DB_HOST: pg-cluster-rw.{{ .Namespace }}.svc.cluster.local
+`)
+
+	loader := NewLoader(LoadOptions{
+		ConfigPath: configPath,
+		Namespace:  "demo-system",
+	})
+
+	data, err := loader.Load()
+	if err != nil {
+		t.Fatalf("Load() unexpected error: %v", err)
+	}
+
+	steps := data["steps"].([]any)
+	first := steps[0].(map[string]any)
+	valueFrom := first["with"].(map[string]any)["valueFrom"].(map[string]any)
+	metadata := valueFrom["metadata"].(map[string]any)
+	if got := metadata["namespace"]; got != "demo-system" {
+		t.Fatalf("metadata.namespace = %v, want demo-system", got)
+	}
+
+	second := steps[1].(map[string]any)
+	values := second["with"].(map[string]any)["values"].(map[string]any)
+	config := values["config"].(map[string]any)
+	if got := config["DB_HOST"]; got != "pg-cluster-rw.demo-system.svc.cluster.local" {
+		t.Fatalf("DB_HOST = %v, want pg-cluster-rw.demo-system.svc.cluster.local", got)
+	}
+}
+
 func writeTestFile(t *testing.T, path string, data string) {
 	t.Helper()
 

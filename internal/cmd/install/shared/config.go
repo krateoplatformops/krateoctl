@@ -2,6 +2,7 @@ package shared
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/krateoplatformops/krateoctl/internal/config"
 	"github.com/krateoplatformops/krateoctl/internal/workflows/types"
@@ -24,7 +25,11 @@ type LoadResult struct {
 
 // LoadConfigAndSteps loads the Krateo configuration, validates it (unless skipped), and resolves the active steps.
 // The optional logger is used to display validation warnings.
-func LoadConfigAndSteps(opts config.LoadOptions, logger func(string, ...any), skipValidation bool) (*LoadResult, error) {
+func LoadConfigAndSteps(opts config.LoadOptions, namespace string, logger func(string, ...any), skipValidation bool) (*LoadResult, error) {
+	if opts.Namespace == "" {
+		opts.Namespace = namespace
+	}
+
 	loader := config.NewLoader(opts)
 
 	data, err := loader.Load()
@@ -32,11 +37,13 @@ func LoadConfigAndSteps(opts config.LoadOptions, logger func(string, ...any), sk
 		return nil, fmt.Errorf("Failed to load configuration: %w", err)
 	}
 
-	return BuildLoadResult(data, logger, skipValidation)
+	return BuildLoadResult(data, namespace, logger, skipValidation)
 }
 
 // BuildLoadResult validates raw configuration data and resolves the active steps.
-func BuildLoadResult(data map[string]any, logger func(string, ...any), skipValidation bool) (*LoadResult, error) {
+func BuildLoadResult(data map[string]any, namespace string, logger func(string, ...any), skipValidation bool) (*LoadResult, error) {
+	applyNamespaceTemplate(data, namespace)
+
 	cfg, err := config.NewConfig(data)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to build configuration: %w", err)
@@ -67,4 +74,35 @@ func BuildLoadResult(data map[string]any, logger func(string, ...any), skipValid
 		Steps:         steps,
 		OriginalSteps: originalSteps,
 	}, nil
+}
+
+func applyNamespaceTemplate(value any, namespace string) any {
+	if namespace == "" {
+		return value
+	}
+
+	switch v := value.(type) {
+	case map[string]any:
+		for key, item := range v {
+			v[key] = applyNamespaceTemplate(item, namespace)
+		}
+		return v
+	case []any:
+		for i, item := range v {
+			v[i] = applyNamespaceTemplate(item, namespace)
+		}
+		return v
+	case string:
+		return replaceNamespaceTemplateTokens(v, namespace)
+	default:
+		return value
+	}
+}
+
+func replaceNamespaceTemplateTokens(value, namespace string) string {
+	replaced := strings.ReplaceAll(value, "{{ .Namespace }}", namespace)
+	replaced = strings.ReplaceAll(replaced, "{{.Namespace}}", namespace)
+	replaced = strings.ReplaceAll(replaced, "{{ .Namespace}}", namespace)
+	replaced = strings.ReplaceAll(replaced, "{{.Namespace }}", namespace)
+	return replaced
 }
