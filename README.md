@@ -6,6 +6,8 @@
 
 ### Automatic installation (Linux/macOS)
 
+#### Using curl
+
 You can install the latest version of `krateoctl` easily by running the following command in your terminal:
 
 ```sh
@@ -19,6 +21,13 @@ This script will:
 - Install it into _/usr/local/bin_ (requires sudo)
   - otherwise fallback to _$HOME/.local/bin_ 
 - Make sure the install directory is in your _PATH_ environment variable
+
+#### Using Homebrew (macOS)
+
+```sh
+brew tap krateoplatformops/krateoctl
+brew install krateoctl
+```
 
 ### Manual installation (Windows or other OS)
 
