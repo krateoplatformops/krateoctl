@@ -2,23 +2,18 @@
 
 Krateo 3.0.0 introduces a major architectural shift from a cluster-resident controller to a stateless CLI-based management model. The core goal of this migration is to move Krateo installation and upgrade management away from the in-cluster installer controller to the external `krateoctl` CLI tool, giving you explicit control over the full lifecycle through `plan` and `apply` workflows. This guide covers the migration from the legacy installer-based approach to the new `krateo.yaml` + `krateoctl` workflow.
 
+## Table of Contents
+
+- [What's Changed in 3.0.0](#whats-changed-in-30)
+- [Prerequisites](#prerequisites)
+- [Migration Steps](#migration-steps)
+- [Secrets Configuration](#secrets-configuration)
+- [Migration for Different Environments](#migration-for-different-environments)
+- [Fresh Installations or Future Updates](#fresh-installations-or-future-updates)
+- [About Pre-Upgrade Cleanup and Deployment Profiles](#about-pre-upgrade-cleanup-and-deployment-profiles)
+- [Getting Help](#getting-help)
+
 ## What's Changed in 3.0.0
-
-### Management Architecture
-- **From:** Installer controller running inside the cluster (KrateoPlatformOps resource)
-- **To:** External stateless CLI manager (`krateoctl`) that converges state and exits
-
-### Configuration Model
-- **From:** Single KrateoPlatformOps CRD with inline values
-- **To:** Layered configuration model with `krateo.yaml`, optional `krateo-overrides.yaml`, and CLI flags
-
-### State Management & Persistence
-- **From:** In-cluster controller managing lifecycle; dedicated etcd for events storage
-- **To:** Installation state stored as `Installation` custom resource snapshot; new CNPG-based PostgreSQL for events and resource persistence
-
-### CLI & Workflow
-- **From:** Limited, controller-driven operations
-- **To:** Explicit `plan` → `apply` workflow with full preview capabilities via `krateoctl install` commands
 
 ### Infrastructure Updates
 
@@ -78,11 +73,19 @@ Krateo 3.0.0 introduces a major architectural shift from a cluster-resident cont
 ## Prerequisites
 
 - kubectl configured and connected to your cluster
-- Krateo 2.7.0 is currently running in your cluster
+- **Krateo 2.7.0 is currently running in your cluster** with the installer controller
 - Latest `krateoctl` binary (3.0.0+) installed locally
 - Adequate cluster permissions to manage resources in your Krateo namespace (default: `krateo-system`)
 
+> [!NOTE]
+> These migration steps are **only for existing Krateo 2.7.0 installations** managed by the installer controller. For fresh Krateo 3.0.0 installations on a new cluster, use `krateoctl install apply` directly with your `krateo.yaml` configuration file instead of the migration commands.
+
 ## Migration Steps
+
+> [!IMPORTANT]
+> These steps apply **only when migrating from an existing Krateo 2.7.0 installation** with the installer controller running in your cluster.
+>
+> For **fresh Krateo 3.0.0 installations** on a new cluster, see [Install and Upgrade](install-upgrade.md) and use `krateoctl install apply` directly with your `krateo.yaml` file.
 
 ### 1. Prepare Your Environment
 
@@ -128,11 +131,18 @@ If you need to customize the installation, create `krateo-overrides.yaml` instea
 
 ### 5. Generate the Full Migration Plan
 
-Generate the complete migration configuration for your infrastructure type:
+Generate the complete migration configuration for your infrastructure type. If using OpenShift, add the `--profile openshift` flag:
 
 ```bash
 krateoctl install migrate-full \
   --type <nodeport|loadbalancer|ingress> \
+  --namespace krateo-system \
+  --output krateo.yaml
+
+# For OpenShift:
+krateoctl install migrate-full \
+  --type loadbalancer \
+  --profile openshift \
   --namespace krateo-system \
   --output krateo.yaml
 ```
@@ -192,16 +202,215 @@ kubectl get krateoplatformops -n krateo-system || echo "Legacy resources cleaned
 kubectl get installation krateoctl -n krateo-system -o yaml
 ```
 
-## Future Updates (3.0.0+)
+## Secrets Configuration
+
+Krateo 3.0.0 does not bootstrap production secrets. Secrets must be created and managed separately before or during the migration. See the full [Secrets Spec](secrets.md) for detailed requirements and architecture.
+
+### Creating Required Secrets
+
+Before running migration, create the required secrets in your install namespace. Krateo 3.0.0 requires the following secrets:
+
+```bash
+# Generate URL-safe random JWT signing key
+JWT_SIGN_KEY=$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=')
+
+# Generate URL-safe database password (use the same for both secrets)
+DB_PASS=$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=')
+
+# Create jwt-sign-key secret
+kubectl create secret generic jwt-sign-key \
+  --from-literal=JWT_SIGN_KEY="$JWT_SIGN_KEY" \
+  -n krateo-system
+
+# Create krateo-db secret (for stack components)
+kubectl create secret generic krateo-db \
+  --from-literal=DB_USER=krateo-db-user \
+  --from-literal=DB_PASS="$DB_PASS" \
+  -n krateo-system
+
+# Create krateo-db-user secret (for CNPG/database)
+# Must use the same password as krateo-db
+kubectl create secret generic krateo-db-user \
+  --from-literal=username=krateo-db-user \
+  --from-literal=password="$DB_PASS" \
+  -n krateo-system
+```
+
+**Important consistency rules:**
+- `krateo-db` and `krateo-db-user` **must** use the same password value
+- The `jwt-sign-key` should be generated once and kept stable across upgrades
+- All secrets must be created in the same namespace as your Krateo installation
+- Passwords are generated as URL-safe strings (no `/`, `+`, or `=` characters)
+
+### List of Required Secrets
+
+The three required secrets are:
+
+1. **jwt-sign-key** - JWT signing key used by platform components
+2. **krateo-db** - Database credentials for stack components (DB_USER, DB_PASS)
+3. **krateo-db-user** - Database credentials for CNPG/database (username, password)
+
+Refer to [Secrets Spec](secrets.md) for complete details on secret structure, naming, and management best practices.
+
+## Migration for Different Environments
+
+> [!NOTE]
+> This section shows how to **migrate from Krateo 2.7.0 to 3.0.0** with different infrastructure types. The `--type` flag determines how your migrated Krateo will be exposed to users.
+>
+> For **fresh Krateo 3.0.0 installations** (not migration), see [Install and Upgrade](install-upgrade.md).
+
+The `--type` flag during migration determines the deployment profile and networking configuration for your Krateo installation. Choose based on your infrastructure:
+
+### NodePort (Kind, Local Development, Air-Gapped Clusters)
+
+**Best for:** Local development with Kind, Minikube, or air-gapped Kubernetes deployments.
+
+**Characteristics:**
+- Services exposed on high-numbered ports (30000-32767) on each node
+- No external load balancer required
+- Direct node IP access needed
+
+**Installation:**
+```bash
+# Step 1: Migrate from controller-based 2.7.0 to CLI-based management
+krateoctl install migrate-full \
+  --type nodeport \
+  --namespace krateo-system \
+  --output krateo.yaml
+
+# Step 2: Apply to upgrade from 2.7.0 to 3.0.0
+krateoctl install apply \
+  --version 3.0.0 \
+  --type nodeport \
+  --namespace krateo-system
+```
+
+**Access Krateo after upgrade completes:**
+```bash
+# Get the node IP and service port
+NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+SERVICE_PORT=$(kubectl get svc krateo-frontend -n krateo-system -o jsonpath='{.spec.ports[0].nodePort}')
+
+# Access via: http://$NODE_IP:$SERVICE_PORT
+echo "Access Krateo at: http://$NODE_IP:$SERVICE_PORT"
+```
+
+**For Kind clusters:**
+```bash
+# If using Kind, port-forward for local access
+kubectl port-forward -n krateo-system svc/krateo-frontend 8080:80 &
+# Access at: http://localhost:8080
+```
+
+### LoadBalancer (Cloud Providers: AWS, GCP, Azure)
+
+**Best for:** Cloud-native Kubernetes clusters with external load balancer support (EKS, GKE, AKS).
+
+**Characteristics:**
+- Automatic external load balancer provisioning (IP or hostname)
+- Cloud provider handles load balancing and routing
+- No domain required (use cloud provider's assigned hostname)
+
+**Installation:**
+```bash
+# Step 1: Migrate from controller-based 2.7.0 to CLI-based management
+krateoctl install migrate-full \
+  --type loadbalancer \
+  --namespace krateo-system \
+  --output krateo.yaml
+
+# Step 2: Apply to upgrade from 2.7.0 to 3.0.0
+krateoctl install apply \
+  --version 3.0.0 \
+  --type loadbalancer \
+  --namespace krateo-system
+```
+
+**Access Krateo:**
+```bash
+# Get the external LoadBalancer IP/hostname
+kubectl get svc krateo-frontend -n krateo-system
+
+# External IP will be assigned by your cloud provider
+# Access: http://<EXTERNAL-IP> or http://<EXTERNAL-HOSTNAME>
+```
+
+**Example outputs:**
+```
+# AWS/GCP/Azure
+NAME              TYPE           CLUSTER-IP       EXTERNAL-IP
+krateo-frontend   LoadBalancer   10.0.0.100       a1b2c3d4-123456789.elb.amazonaws.com
+```
+
+### Ingress (Cloud Providers with Custom Domains)
+
+**Best for:** Production deployments using custom domains, certificate management via cert-manager, and HTTP/HTTPS routing.
+
+**Characteristics:**
+- Uses Kubernetes Ingress resource for routing
+- Support for custom domains and TLS certificates
+- Requires Ingress Controller (nginx-ingress, traefik, etc.)
+- More control over routing and SSL/TLS
+
+**Installation:**
+```bash
+# Step 1: Migrate from controller-based 2.7.0 to CLI-based management
+krateoctl install migrate-full \
+  --type ingress \
+  --namespace krateo-system \
+  --output krateo.yaml
+
+# Step 2: Apply to upgrade from 2.7.0 to 3.0.0
+krateoctl install apply \
+  --version 3.0.0 \
+  --type ingress \
+  --namespace krateo-system
+```
+
+**Configure your domain:**
+
+#### Option 1: Local Environment (without domain registration)
+
+#### Option 2: Production/Cloud Environment (with domain registration)
+
+### OpenShift (with OpenShift Profile)
+
+**Best for:** OpenShift Container Platform with native security, RBAC, and route management.
+
+**Installation:**
+OpenShift requires combining a `--type` with the `--profile openshift` flag:
+
+```bash
+# Step 1: Migrate from controller-based 2.7.0 to CLI-based management
+krateoctl install migrate-full \
+  --type loadbalancer \
+  --namespace krateo-system \
+  --output krateo.yaml
+
+# Step 2: Apply to upgrade from 2.7.0 to 3.0.0
+krateoctl install apply \
+  --version 3.0.0 \
+  --type loadbalancer \
+  --profile openshift \
+  --namespace krateo-system
+```
+
+This applies the OpenShift-specific profile which includes:
+- Restricted security context for pod security policies
+- OpenShift RBAC configurations
+- Routes for service exposure (handles networking automatically)
+- OpenShift-native networking and security
+
+## Fresh Installations or Future Updates
 
 After successful migration, upgrading to future 3.x versions is straightforward:
 
 ```bash
 # Preview the upgrade
-krateoctl install plan --version 3.0.0 --namespace krateo-system --type <nodeport|loadbalancer|ingress> --diff-installed --diff-format table
+krateoctl install plan --version 3.0.0 --namespace krateo-system --type <nodeport|loadbalancer|ingress> --diff-installed --diff-format table [--profile openshift]
 
 # Apply the upgrade
-krateoctl install apply --version 3.0.0 --namespace krateo-system --type <nodeport|loadbalancer|ingress> 
+krateoctl install apply --version 3.0.0 --namespace krateo-system --type <nodeport|loadbalancer|ingress> [--profile openshift] 
 ```
 
 See [Install and Upgrade](install-upgrade.md) for detailed instructions.
@@ -230,15 +439,33 @@ kubectl apply -f pre-upgrade.yaml
 kubectl wait --for=condition=complete job/uninstall-old-components -n krateo-system
 ```
 
-### Deployment Configuration Profiles
+### Deployment Configuration Profiles and Types
 
-The 3.0.0 installation uses profile-based configuration for different infrastructure types:
+The 3.0.0 installation uses two separate configuration mechanisms:
 
-- **LoadBalancer profile**: For cloud environments (GCP, AWS, Azure) using external LoadBalancer services
-- **OpenShift profile**: For OpenShift clusters with native security and service policies
-- **NodePort/Ingress profiles**: For on-premise and hybrid environments
+**Type (`--type`)** determines the networking/service exposure method:
+- **LoadBalancer**: For cloud environments (GCP, AWS, Azure) using external LoadBalancer services
+- **NodePort**: For local development and air-gapped environments
+- **Ingress**: For production with custom domains and Ingress Controllers
 
-Each profile specifies the complete `KrateoPlatformOps` manifest with all 20+ components, their versions, and environment-specific settings. The appropriate profile is automatically selected based on your `--type` flag during `krateoctl install migrate-full`. See the [releases repository](https://github.com/krateoplatformops/releases) for available configuration profiles and detailed documentation.
+**Profile (`--profile`)** applies environment-specific configurations and overrides:
+- **openshift**: Enables OpenShift-specific security contexts, RBAC, Routes, and pod security policies. Use with any `--type`.
+- **monitoring**: Adds enhanced observability and metrics collection (optional)
+- **debug**: Enables verbose logging and debugging output (optional)
+
+Example usage:
+```bash
+# Standard cloud deployment
+krateoctl install migrate-full --type loadbalancer ...
+
+# OpenShift deployment
+krateoctl install migrate-full --type loadbalancer --profile openshift ...
+
+# Local development with monitoring
+krateoctl install migrate-full --type nodeport --profile monitoring ...
+```
+
+Each combination specifies the complete `KrateoPlatformOps` manifest with all 20+ components, their versions, and environment-specific settings. See the [releases repository](https://github.com/krateoplatformops/releases) for available profiles and detailed documentation.
 
 ## Getting Help
 
