@@ -14,6 +14,8 @@ import (
 type LoadOptions struct {
 	// ConfigPath is the path to the main krateo.yaml (used for local mode)
 	ConfigPath string
+	// Namespace is the target namespace used for config templating.
+	Namespace string
 	// UserOverridesPath is the path to krateo-overrides.yaml (optional)
 	UserOverridesPath string
 	// Profile is the optional name of a profile to apply from overrides
@@ -288,6 +290,7 @@ func (l *Loader) loadRemoteFile(repo, version, filename string) (map[string]any,
 	if err != nil {
 		return nil, err
 	}
+	content = l.applyTemplates(content)
 
 	var data map[string]any
 	if err := yaml.Unmarshal(content, &data); err != nil {
@@ -373,6 +376,7 @@ func (l *Loader) loadFile(path string) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file %s: %w", path, err)
 	}
+	content = l.applyTemplates(content)
 
 	var data map[string]any
 	if err := yaml.Unmarshal(content, &data); err != nil {
@@ -380,6 +384,27 @@ func (l *Loader) loadFile(path string) (map[string]any, error) {
 	}
 
 	return data, nil
+}
+
+func (l *Loader) applyTemplates(content []byte) []byte {
+	if len(content) == 0 {
+		return content
+	}
+
+	res := string(content)
+	if l.opts.Namespace != "" {
+		res = replaceNamespaceTokens(res, l.opts.Namespace)
+	}
+
+	return []byte(res)
+}
+
+func replaceNamespaceTokens(value, namespace string) string {
+	replaced := strings.ReplaceAll(value, "{{ .Namespace }}", namespace)
+	replaced = strings.ReplaceAll(replaced, "{{.Namespace}}", namespace)
+	replaced = strings.ReplaceAll(replaced, "{{ .Namespace}}", namespace)
+	replaced = strings.ReplaceAll(replaced, "{{.Namespace }}", namespace)
+	return replaced
 }
 
 // mergeConfigs recursively merges override config into base config.

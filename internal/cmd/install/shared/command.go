@@ -23,6 +23,7 @@ func NewLogger(writer io.Writer, debug bool) *ui.Logger {
 
 type LoadOptionsInput struct {
 	ConfigFile       string
+	Namespace        string
 	Profile          string
 	Version          string
 	Repository       string
@@ -32,6 +33,7 @@ type LoadOptionsInput struct {
 func NewLoadOptions(input LoadOptionsInput) config.LoadOptions {
 	return config.LoadOptions{
 		ConfigPath:        input.ConfigFile,
+		Namespace:         input.Namespace,
 		UserOverridesPath: DefaultOverridesPath,
 		Profile:           input.Profile,
 		Version:           input.Version,
