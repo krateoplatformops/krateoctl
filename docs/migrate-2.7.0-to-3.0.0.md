@@ -1,6 +1,6 @@
 # Krateo 2.7.0 to 3.0.0 Migration Guide
 
-Krateo 3.0.0 introduces a major architectural shift from a cluster-resident controller to a stateless CLI-based management model. This guide covers the migration from the legacy installer-based approach to the new `krateo.yaml` workflow.
+Krateo 3.0.0 introduces a major architectural shift from a cluster-resident controller to a stateless CLI-based management model. The core goal of this migration is to move Krateo installation and upgrade management away from the in-cluster installer controller to the external `krateoctl` CLI tool, giving you explicit control over the full lifecycle through `plan` and `apply` workflows. This guide covers the migration from the legacy installer-based approach to the new `krateo.yaml` + `krateoctl` workflow.
 
 ## What's Changed in 3.0.0
 
