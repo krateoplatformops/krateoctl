@@ -22,13 +22,24 @@ func kubeconfigPath() (string, error) {
 	return fn, nil
 }
 
+// fileExists checks if a file exists
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// RestConfig returns a REST config for communicating with Kubernetes API.
+// It attempts to load from kubeconfig first, then falls back to in-cluster
+// ServiceAccount credentials if kubeconfig is not available.
 func RestConfig() (*rest.Config, error) {
 	fn, err := kubeconfigPath()
-	if err != nil {
-		return nil, err
+	if err == nil && fileExists(fn) {
+		// Kubeconfig exists, use it
+		return clientcmd.BuildConfigFromFlags("", fn)
 	}
 
-	return clientcmd.BuildConfigFromFlags("", fn)
+	// Fallback to in-cluster ServiceAccount authentication
+	return rest.InClusterConfig()
 }
 
 func ClientConfig() (clientcmd.ClientConfig, error) {
