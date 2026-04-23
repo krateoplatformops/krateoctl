@@ -311,7 +311,7 @@ func (c *Config) GetActiveSteps() ([]*types.Step, error) {
 	return steps, nil
 }
 
-// applyComponentOverrides merges component-level overrides into chart steps.
+// applyComponentOverrides merges component-level overrides into steps.
 // Structure supported in configuration (typically via krateo-overrides.yaml):
 //
 // components:
@@ -324,13 +324,16 @@ func (c *Config) GetActiveSteps() ([]*types.Step, error) {
 //	    <stepID>:
 //	      helmValues:
 //	        ...
+//	      with:
+//	        ...
 //
-// Merge order for a given chart step is:
+// Merge order for a given step is:
 //
 //	base step values <- component.helmDefaults <- component.stepConfig[stepID].helmValues
 //	base step with    <- component.helmDefaults.with <- component.stepConfig[stepID].with
 //
 // where later entries override earlier ones on key conflicts.
+// This applies to all step types (chart, var, etc.), not just chart steps.
 func (c *Config) applyComponentOverrides(steps []*types.Step) error {
 	definitions := c.componentDefinitions()
 	if len(definitions) == 0 {
@@ -340,7 +343,7 @@ func (c *Config) applyComponentOverrides(steps []*types.Step) error {
 	overrides := c.componentOverrides()
 
 	for _, step := range steps {
-		if step.Type != types.TypeChart || step.With == nil {
+		if step.With == nil {
 			continue
 		}
 
