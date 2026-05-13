@@ -92,8 +92,60 @@ func applyDefaultComponents(doc *config.Document, installType string) error {
 		return err
 	}
 
-	doc.ComponentsDefinition = components
+	doc.ComponentsDefinition = filterComponentsDefinition(components, doc.Steps)
 	return nil
+}
+
+func filterComponentsDefinition(components map[string]config.ComponentConfig, steps []config.StepDefinition) map[string]config.ComponentConfig {
+	if len(components) == 0 {
+		return nil
+	}
+
+	stepIDs := make(map[string]struct{}, len(steps))
+	for _, step := range steps {
+		stepIDs[step.ID] = struct{}{}
+	}
+
+	filtered := make(map[string]config.ComponentConfig, len(components))
+	for name, component := range components {
+		keptSteps := make([]string, 0, len(component.Steps))
+		for _, stepID := range component.Steps {
+			if _, ok := stepIDs[stepID]; ok {
+				keptSteps = append(keptSteps, stepID)
+			}
+		}
+
+		if len(keptSteps) == 0 {
+			continue
+		}
+
+		filteredComponent := component
+		filteredComponent.Steps = keptSteps
+
+		if len(component.StepConfig) > 0 {
+			stepConfig := make(map[string]map[string]interface{}, len(component.StepConfig))
+			for stepID, configValues := range component.StepConfig {
+				if _, ok := stepIDs[stepID]; !ok {
+					continue
+				}
+
+				stepConfig[stepID] = configValues
+			}
+			if len(stepConfig) > 0 {
+				filteredComponent.StepConfig = stepConfig
+			} else {
+				filteredComponent.StepConfig = nil
+			}
+		}
+
+		filtered[name] = filteredComponent
+	}
+
+	if len(filtered) == 0 {
+		return nil
+	}
+
+	return filtered
 }
 
 func loadComponentsDefinition(data []byte) (map[string]config.ComponentConfig, error) {
