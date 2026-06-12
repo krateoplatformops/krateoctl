@@ -5,7 +5,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 
 	"github.com/krateoplatformops/krateoctl/internal/cmd/install/shared"
@@ -46,7 +45,7 @@ func (c *planCmd) Synopsis() string { return "preview configuration changes" }
 
 func (c *planCmd) Usage() string {
 	wri := bytes.Buffer{}
-	fmt.Fprintf(&wri, "%s. Load the installation config and print the computed workflow steps as multi-document YAML, without talking to the cluster.\n\n", c.Synopsis())
+	fmt.Fprintf(&wri, "%s. Load the installation config and, with --output, print the computed configuration as a single YAML document, without talking to the cluster.\n\n", c.Synopsis())
 
 	fmt.Fprint(&wri, "USAGE:\n\n")
 	fmt.Fprint(&wri, "  krateoctl install plan [FLAGS]\n\n")
@@ -70,7 +69,8 @@ func (c *planCmd) Usage() string {
 	fmt.Fprint(&wri, "        choose how diffs are rendered: unified (default) or table\n")
 	fmt.Fprint(&wri, "        table shows a step-by-step summary for the compared plan\n")
 	fmt.Fprint(&wri, "  --output\n")
-	fmt.Fprint(&wri, "        output computed plan steps as multi-document YAML to stdout\n")
+	fmt.Fprint(&wri, "        print the computed configuration as a single YAML document to stdout\n")
+	fmt.Fprint(&wri, "        (componentsDefinition + computed steps), re-feedable as --config\n")
 	fmt.Fprint(&wri, "  --skip-validation\n")
 	fmt.Fprint(&wri, "        skip configuration validation (useful for emergency recovery)\n")
 	fmt.Fprint(&wri, "  --debug\n")
@@ -88,8 +88,9 @@ func (c *planCmd) Usage() string {
 	fmt.Fprint(&wri, "    are still shown but include 'skip: true' in the output.\n")
 	fmt.Fprint(&wri, "  - Type-specific files such as pre-upgrade.nodeport.yaml are used first.\n")
 	fmt.Fprint(&wri, "    If no type-specific file exists, the generic file pre-upgrade.yaml is used.\n")
-	fmt.Fprint(&wri, "  - When --output is set, computed steps are written as a stream of YAML documents,\n")
-	fmt.Fprint(&wri, "    one per step, including 'id', 'type', optional 'skip', and 'with' section.\n\n")
+	fmt.Fprint(&wri, "  - When --output is set, the computed configuration is written as a single YAML\n")
+	fmt.Fprint(&wri, "    document (componentsDefinition + steps); each step includes 'id', 'type',\n")
+	fmt.Fprint(&wri, "    optional 'skip', and a 'with' section. The result can be passed back as --config.\n\n")
 
 	fmt.Fprint(&wri, "EXAMPLES:\n\n")
 	fmt.Fprint(&wri, "  # Preview from a specific release version (remote mode)\n")
@@ -161,6 +162,28 @@ func (c *planCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{
 		return subcommands.ExitSuccess
 	}
 
+	// Output the computed plan as a single, re-feedable YAML document if requested.
+	// We start from the merged configuration (config + overrides + profile + type already
+	// applied) and replace its "steps" section with the computed steps, so the result keeps
+	// componentsDefinition and can be passed back as --config.
+	if c.output {
+		merged := result.Config.Raw()
+		merged["steps"] = steps
+
+		enc := yaml.NewEncoder(os.Stdout)
+		enc.SetIndent(2)
+		if err := enc.Encode(merged); err != nil {
+			l.Error("✗ Failed to output computed plan: %v", err)
+			return subcommands.ExitFailure
+		}
+		if err := enc.Close(); err != nil {
+			l.Error("✗ Failed to output computed plan: %v", err)
+			return subcommands.ExitFailure
+		}
+
+		return subcommands.ExitSuccess
+	}
+
 	version := c.version
 	if version == "" {
 		version = "local"
@@ -183,67 +206,49 @@ func (c *planCmd) Execute(ctx context.Context, fs *flag.FlagSet, _ ...interface{
 		return subcommands.ExitFailure
 	}
 
-	// Output the computed configuration as YAML if requested
-	if c.output {
-		// Output the original configuration file
-		if c.configFile != "" {
-			configFile, err := os.Open(c.configFile)
+	// Otherwise show the comparison: against the stored snapshot, or original vs computed.
+	if c.diffInstalled {
+		rc, err := c.restConfigFn()
+		if err != nil {
+			l.Error("Failed to load kubeconfig for diff: %v", err)
+			return subcommands.ExitFailure
+		}
+
+		store, err := c.stateFactory(rc, c.namespace)
+		if err != nil {
+			l.Error("Failed to initialize installation state store: %v", err)
+			return subcommands.ExitFailure
+		}
+
+		installed, err := store.Load(ctx, c.stateName)
+		switch {
+		case apierrors.IsNotFound(err):
+			l.Info("ℹ Installation snapshot %q not found in namespace %q", c.stateName, c.namespace)
+		case err != nil:
+			l.Error("Failed to read installation snapshot: %v", err)
+			return subcommands.ExitFailure
+		default:
+			installedBytes, err := yaml.Marshal(installed)
 			if err != nil {
-				l.Error("✗ Failed to open config file: %v", err)
+				l.Error("Failed to marshal stored snapshot: %v", err)
 				return subcommands.ExitFailure
 			}
-			defer configFile.Close()
 
-			if _, err := io.Copy(os.Stdout, configFile); err != nil {
-				l.Error("✗ Failed to output config file: %v", err)
+			planBytes, err := yaml.Marshal(snapshot)
+			if err != nil {
+				l.Error("Failed to marshal computed snapshot: %v", err)
+				return subcommands.ExitFailure
+			}
+
+			if err := c.renderDiff(l, os.Stderr, "installed", installedBytes, "plan", planBytes, installed, snapshot); err != nil {
+				l.Error("%v", err)
 				return subcommands.ExitFailure
 			}
 		}
 	} else {
-		// Only show comparison messages when not outputting steps
-		if c.diffInstalled {
-			rc, err := c.restConfigFn()
-			if err != nil {
-				l.Error("Failed to load kubeconfig for diff: %v", err)
-				return subcommands.ExitFailure
-			}
-
-			store, err := c.stateFactory(rc, c.namespace)
-			if err != nil {
-				l.Error("Failed to initialize installation state store: %v", err)
-				return subcommands.ExitFailure
-			}
-
-			installed, err := store.Load(ctx, c.stateName)
-			switch {
-			case apierrors.IsNotFound(err):
-				l.Info("ℹ Installation snapshot %q not found in namespace %q", c.stateName, c.namespace)
-			case err != nil:
-				l.Error("Failed to read installation snapshot: %v", err)
-				return subcommands.ExitFailure
-			default:
-				installedBytes, err := yaml.Marshal(installed)
-				if err != nil {
-					l.Error("Failed to marshal stored snapshot: %v", err)
-					return subcommands.ExitFailure
-				}
-
-				planBytes, err := yaml.Marshal(snapshot)
-				if err != nil {
-					l.Error("Failed to marshal computed snapshot: %v", err)
-					return subcommands.ExitFailure
-				}
-
-				if err := c.renderDiff(l, os.Stderr, "installed", installedBytes, "plan", planBytes, installed, snapshot); err != nil {
-					l.Error("%v", err)
-					return subcommands.ExitFailure
-				}
-			}
-		} else {
-			if err := c.renderDiff(l, os.Stderr, "original", boriginalSteps, "computed", bSteps, result.OriginalSteps, steps); err != nil {
-				l.Error("%v", err)
-				return subcommands.ExitFailure
-			}
+		if err := c.renderDiff(l, os.Stderr, "original", boriginalSteps, "computed", bSteps, result.OriginalSteps, steps); err != nil {
+			l.Error("%v", err)
+			return subcommands.ExitFailure
 		}
 	}
 

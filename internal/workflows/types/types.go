@@ -157,10 +157,10 @@ const (
 )
 
 type Step struct {
-	ID   string          `json:"id"`
-	Type StepType        `json:"type"`
-	With *map[string]any `json:"with"`
-	Skip bool            `json:"skip,omitempty"`
+	ID   string          `json:"id" yaml:"id"`
+	Type StepType        `json:"type" yaml:"type"`
+	With *map[string]any `json:"with" yaml:"with,omitempty"`
+	Skip bool            `json:"skip,omitempty" yaml:"skip,omitempty"`
 }
 
 type Workflow struct {
