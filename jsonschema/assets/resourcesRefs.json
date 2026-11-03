@@ -18,7 +18,6 @@
                 }
             },
             "required": [
-                "page",
                 "perPage"
             ]
         },
@@ -72,7 +71,6 @@
                             }
                         },
                         "required": [
-                            "page",
                             "perPage"
                         ]
                     }

@@ -23,7 +23,9 @@ upx:
     # Filter by build ID.
     ids: [krateoctl]
     # Filter by GOOS.
-    goos: [linux, windows]
+    # NOTE: UPX-packed binaries trigger antivirus/SmartScreen false positives on
+    # Windows, so we never compress the Windows build. Keep UPX for Linux only.
+    goos: [linux]
     # Filter by GOARCH.
     goarch: [amd64]
     # Compress argument.

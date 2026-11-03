@@ -9,12 +9,20 @@ import (
 
 	"github.com/krateoplatformops/krateoctl/internal/cmd/gencrd"
 	"github.com/krateoplatformops/krateoctl/internal/cmd/genschema"
+	"github.com/krateoplatformops/krateoctl/internal/cmd/get"
+	"github.com/krateoplatformops/krateoctl/internal/cmd/install"
+	"github.com/krateoplatformops/krateoctl/internal/cmd/patch"
 	"github.com/krateoplatformops/krateoctl/internal/cmd/users"
 	"github.com/krateoplatformops/krateoctl/internal/subcommands"
+	"k8s.io/client-go/rest"
 )
 
 const (
 	appName = "krateoctl"
+
+	// Category names for subcommands
+	categoryInstallation = "installation management"
+	categoryUtilities    = "utilities"
 )
 
 var (
@@ -30,12 +38,20 @@ func main() {
 		fmt.Fprintf(w, "┴ ┴┴└─┴ ┴ ┴ └─┘└─┘\n")
 		fmt.Fprintf(w, "               CTL (ver: %s, bld: %s)\n\n", version, commit)
 	}
-	tool.Register(genschema.Command(), "")
-	tool.Register(gencrd.Command(), "")
-	tool.Register(users.AddCommand(), "")
+
+	// Installation management commands
+
+	tool.Register(install.Command(), categoryInstallation)
+
+	// Utilities
+	tool.Register(genschema.Command(), categoryUtilities)
+	tool.Register(gencrd.Command(), categoryUtilities)
+	tool.Register(get.Command(), categoryUtilities)
+	tool.Register(patch.Command(), categoryUtilities)
+	tool.Register(users.AddCommand(), categoryUtilities)
 
 	flag.Parse()
-
+	rest.SetDefaultWarningHandler(rest.NoWarnings{})
 	ctx := context.Background()
 	os.Exit(int(tool.Execute(ctx)))
 }

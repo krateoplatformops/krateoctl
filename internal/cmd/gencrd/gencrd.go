@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/krateo-platformops/plumbing/crdgen"
 	"github.com/krateoplatformops/krateoctl/internal/subcommands"
 	"github.com/krateoplatformops/krateoctl/jsonschema"
+	"github.com/krateo-platformops/plumbing/crdgen"
 )
 
 func Command() subcommands.Command {

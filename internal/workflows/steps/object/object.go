@@ -1,0 +1,166 @@
+package steps
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"github.com/krateoplatformops/krateoctl/internal/cache"
+	"github.com/krateoplatformops/krateoctl/internal/dynamic/applier"
+	"github.com/krateoplatformops/krateoctl/internal/dynamic/deletor"
+	"github.com/krateoplatformops/krateoctl/internal/expand"
+	"github.com/krateoplatformops/krateoctl/internal/workflows/steps"
+	"github.com/krateoplatformops/krateoctl/internal/workflows/types"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+)
+
+var _ steps.Handler[*steps.ObjectResult] = (*objStepHandler)(nil)
+
+func ObjectHandler(app *applier.Applier, del *deletor.Deletor, env *cache.Cache[string, string], logger func(string, ...any)) steps.Handler[*steps.ObjectResult] {
+	return &objStepHandler{
+		app: app, del: del, env: env,
+		subst: func(k string) string {
+			if v, ok := env.Get(k); ok {
+				return v
+			}
+
+			return "$" + k
+		},
+		logger: logger,
+	}
+}
+
+type objStepHandler struct {
+	app    *applier.Applier
+	del    *deletor.Deletor
+	env    *cache.Cache[string, string]
+	ns     string
+	op     steps.Op
+	subst  func(k string) string
+	logger func(string, ...any)
+}
+
+func (r *objStepHandler) Namespace(ns string) {
+	r.ns = ns
+}
+
+func (r *objStepHandler) Op(op steps.Op) {
+	r.op = op
+}
+
+func (r *objStepHandler) Handle(ctx context.Context, id string, ext *map[string]any) (*steps.ObjectResult, error) {
+	uns, err := r.toUnstructured(id, ext)
+	if err != nil {
+		return nil, err
+	}
+
+	gv, err := schema.ParseGroupVersion(uns.GetAPIVersion())
+	if err != nil {
+		return nil, err
+	}
+
+	result := &steps.ObjectResult{
+		APIVersion: uns.GetAPIVersion(),
+		Kind:       uns.GetKind(),
+		Name:       uns.GetName(),
+		Namespace:  uns.GetNamespace(),
+	}
+
+	if r.op == steps.Delete {
+		result.Operation = "delete"
+		err := r.del.Delete(ctx, deletor.DeleteOptions{
+			GVK:       gv.WithKind(uns.GetKind()),
+			Namespace: uns.GetNamespace(),
+			Name:      uns.GetName(),
+		})
+		if apierrors.IsNotFound(err) {
+			err = nil
+		}
+		return result, err
+	}
+
+	result.Operation = "apply"
+	err = r.app.Apply(ctx, uns.Object, applier.ApplyOptions{
+		GVK:       gv.WithKind(uns.GetKind()),
+		Namespace: uns.GetNamespace(),
+		Name:      uns.GetName(),
+	})
+
+	return result, err
+}
+
+func (r *objStepHandler) toUnstructured(id string, ext *map[string]any) (*unstructured.Unstructured, error) {
+	res := types.Object{}
+
+	data, err := json.Marshal(ext)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal chart step input: %w", err)
+	}
+
+	err = json.Unmarshal(data, &res)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal object step input: %w", err)
+	}
+
+	namespace := res.Metadata.Namespace
+	if len(namespace) == 0 {
+		namespace = r.ns
+	}
+
+	src := map[string]any{
+		"apiVersion": res.APIVersion,
+		"kind":       res.Kind,
+		"metadata": map[string]any{
+			"name":      res.Metadata.Name,
+			"namespace": namespace,
+		},
+	}
+
+	mergeMaps(src, res.BodyFields)
+	if expanded := r.expandValues(src); expanded != nil {
+		if objMap, ok := expanded.(map[string]any); ok {
+			src = objMap
+		}
+	}
+
+	r.logger(fmt.Sprintf("[object:%s]: %v", id, src))
+
+	return &unstructured.Unstructured{Object: src}, nil
+}
+
+func mergeMaps(dest, src map[string]any) {
+	for k, v := range src {
+		// If both are maps, recurse to merge them deep
+		if srcMap, ok := v.(map[string]any); ok {
+			if dstMap, ok := dest[k].(map[string]any); ok {
+				mergeMaps(dstMap, srcMap)
+				continue
+			}
+		}
+		// Otherwise, overwrite or set (using your NoCopy logic for speed
+		// or SetNestedField for safety)
+		dest[k] = v
+	}
+}
+
+// expandValues resolves ${VAR} placeholders recursively using the shared cache.
+func (r *objStepHandler) expandValues(val any) any {
+	switch v := val.(type) {
+	case map[string]any:
+		for key, elem := range v {
+			v[key] = r.expandValues(elem)
+		}
+		return v
+	case []any:
+		for i, elem := range v {
+			v[i] = r.expandValues(elem)
+		}
+		return v
+	case string:
+		return expand.Expand(v, "", r.subst)
+	default:
+		return val
+	}
+}
